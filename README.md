@@ -17,3 +17,15 @@ uv run alembic revision --autogenerate
 ```
 uv run python3 -m sukusute_server
 ```
+
+## ダミーデータ送信
+```
+uv run python dummy_data_sender.py
+```
+
+## フロントエンド
+ブラウザで `frontend/index.html` を開くか、HTTPサーバで提供してください。
+```
+uv run python3 -m http.server 8080 -d frontend
+```
+その後 http://localhost:8080 にアクセス。
