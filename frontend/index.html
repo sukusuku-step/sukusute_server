@@ -1,0 +1,58 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>すくすてダッシュボード</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>🌱 すくすてダッシュボード</h1>
+        <div class="health-indicator">
+            <div class="health-dot loading" id="healthDot"></div>
+            <span id="healthText">接続中...</span>
+        </div>
+    </header>
+
+    <div class="card">
+        <h2>お子さんを選択</h2>
+        <select id="childSelect" disabled><option>読み込み中...</option></select>
+        <div id="childListLoading" class="loading" style="display:none">
+            <div class="spinner"></div><span>読み込み中...</span>
+        </div>
+    </div>
+
+    <div class="card" id="childDetailCard" style="display:none">
+        <h2>お子さん情報</h2>
+        <div class="child-info">
+            <div class="info-item"><label>名前</label><span id="childName">-</span></div>
+            <div class="info-item"><label>デバイスID</label><span id="deviceId">-</span></div>
+            <div class="info-item"><label>お子さんID</label><span id="childId">-</span></div>
+        </div>
+    </div>
+
+    <div class="card" id="stepsCard" style="display:none">
+        <h2>最近の歩数</h2>
+        <div id="stepsChart" class="bar-chart"></div>
+    </div>
+
+    <div class="card" id="distanceCard" style="display:none">
+        <h2>他お子さんとの距離</h2>
+        <ul id="distanceList" class="distance-list"></ul>
+    </div>
+
+    <div class="card">
+        <h2>操作</h2>
+        <div class="actions">
+            <button class="btn btn-primary" id="dummyDataBtn" onclick="sendDummyData()">📊 ダミーデータ送信</button>
+            <button class="btn btn-primary" onclick="loadSelectedChildData()" style="background:linear-gradient(135deg,#20c997,#51cf66)">🔄 更新</button>
+        </div>
+        <div id="actionMessage" class="message" style="display:none"></div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
