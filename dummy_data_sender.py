@@ -2,6 +2,7 @@
 ダミーデータ送信スクリプト（継続実行版）
 
 すくすくステップAPIにダミーデータを5秒ごとに送信し続けます。
+歩数と距離は同時に送信し、歩数は累積していきます。
 """
 
 import sys
@@ -10,14 +11,35 @@ import random
 import time
 
 
-def generate_realistic_steps() -> int:
+# 各児童の累積歩数を追跡
+child_step_counters = {}
+
+
+def init_step_counters(child_ids: list) -> None:
     """
-    現実的な歩数（1000-15000歩）を生成する
+    各児童の歩数カウンターを初期化（0から開始）
+
+    Args:
+        child_ids: 児童IDのリスト
+    """
+    for child_id in child_ids:
+        # 0歩から開始
+        child_step_counters[child_id] = 0
+
+
+def get_steps_increment(cycle_count: int) -> int:
+    """
+    サイクル数に応じた歩数の増加量を生成
+
+    サイクル数が増えるほど多くの歩数を追加する（線形増加）
+
+    Args:
+        cycle_count: 現在のサイクル数
 
     Returns:
-        歩数（int）
+        増加量（100 + cycle_count * 50 歩）
     """
-    return random.randint(1000, 15000)
+    return 100 + cycle_count * 50
 
 
 def generate_realistic_distance() -> float:
@@ -30,25 +52,19 @@ def generate_realistic_distance() -> float:
     return round(random.uniform(0.5, 50.0), 2)
 
 
-def get_last_7_days() -> list:
+def send_step_and_distance_data(
+    child_id: int, 
+    date: datetime.datetime,
+    cycle_count: int,
+    base_url: str = "http://localhost:8000"
+) -> bool:
     """
-    過去7日間の日期を生成する
-
-    Returns:
-        日期のリスト（最新日が先頭）
-    """
-    today = datetime.datetime.now()
-    return [today - datetime.timedelta(days=i) for i in range(6, -1, -1)]
-
-
-def send_step_data(child_id: int, date: datetime.datetime, steps: int, base_url: str = "http://localhost:8000") -> bool:
-    """
-    歩数データを送信する
+    歩数データと距離データを同時に送信する
 
     Args:
         child_id: 児童ID
         date: 日期
-        steps: 歩数
+        cycle_count: 現在のサイクル数
         base_url: サーバのベースURL
 
     Returns:
@@ -57,57 +73,36 @@ def send_step_data(child_id: int, date: datetime.datetime, steps: int, base_url:
     import requests
     
     url = f"{base_url}/api/push_data"
+    
+    # 累積歩数を更新
+    if child_id not in child_step_counters:
+        child_step_counters[child_id] = 0
+    child_step_counters[child_id] += get_steps_increment(cycle_count)
+    current_steps = child_step_counters[child_id]
+    
+    # 距離データを生成（ランダムな相手児童との距離）
     payload = {
         "child_id": child_id,
         "singledata": {
             "date": date.isoformat(),
-            "steps": steps
-        }
-    }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        return result.get("status") == "ok"
-    except requests.exceptions.RequestException as e:
-        print(f"  ❌ 歩数データの送信に失敗: {e}")
-        return False
-
-
-def send_distance_data(child_id: int, date: datetime.datetime, with_child: int, distance: float, base_url: str = "http://localhost:8000") -> bool:
-    """
-    距離データを送信する
-
-    Args:
-        child_id: 児童ID
-        date: 日期
-        with_child: 相手児童ID
-        distance: 距離（km）
-        base_url: サーバのベースURL
-
-    Returns:
-        送信成功時はTrue
-    """
-    import requests
-    
-    url = f"{base_url}/api/push_data"
-    payload = {
-        "child_id": child_id,
+            "steps": current_steps
+        },
         "distances": [
             {
                 "date": date.isoformat(),
-                "with_child": with_child,
-                "distance": distance
+                "with_child": (child_id % 10) + 1,  # ランダムな相手（1-10）
+                "distance": generate_realistic_distance()
             }
         ]
     }
+    
     try:
         response = requests.post(url, json=payload)
         response.raise_for_status()
         result = response.json()
         return result.get("status") == "ok"
     except requests.exceptions.RequestException as e:
-        print(f"  ❌ 距離データの送信に失敗: {e}")
+        print(f"  ❌ データ送信に失敗: {e}")
         return False
 
 
@@ -207,11 +202,15 @@ def send_all_dummy_data(base_url: str = "http://localhost:8000", interval: int =
             sys.exit(1)
     
     print(f"📋 対象児童ID: {existing_child_ids}\n")
-    print("🔄 5秒ごとにデータを送信し続けます...")
-    print("   終了するには Ctrl+C を押してください。\n")
     
-    # 過去7日間の日期を事前に生成
-    days = get_last_7_days()
+    # 歩数カウンターを初期化
+    init_step_counters(existing_child_ids)
+    print("📊 初期歩数: 全児童 0歩\n")
+    
+    print("🔄 5秒ごとにデータを送信し続けます...")
+    print("   - 歩数: 累積（1回あたり 100 + サイクル数×50 歩増加）")
+    print("   - 距離: ランダムなペアで送信")
+    print("   終了するには Ctrl+C を押してください。\n")
     
     # ループカウンター
     cycle_count = 0
@@ -222,29 +221,15 @@ def send_all_dummy_data(base_url: str = "http://localhost:8000", interval: int =
             current_time = datetime.datetime.now()
             
             # 各児童に交互にデータを送信
-            for idx, child_id in enumerate(existing_child_ids):
-                # 各サイクルで異なるデータタイプを送信
-                if cycle_count % 2 == 1:
-                    # 奇数サイクル: 歩数データ
-                    day = days[random.randint(0, len(days) - 1)]
-                    steps = generate_realistic_steps()
-                    step_time = datetime.datetime(day.year, day.month, day.day, 18, 0, 0)
-                    
-                    if send_step_data(child_id, step_time, steps, base_url):
-                        print(f"[{current_time.strftime('%H:%M:%S')}] 児童 {child_id}: 歩数 {steps} 歩 を送信")
-                else:
-                    # 偶数サイクル: 距離データ
-                    day = days[random.randint(0, len(days) - 1)]
-                    for other_id in existing_child_ids:
-                        if other_id != child_id:
-                            distance = generate_realistic_distance()
-                            distance_time = datetime.datetime(day.year, day.month, day.day, 12, 0, 0)
-                            if send_distance_data(child_id, distance_time, other_id, distance, base_url):
-                                print(f"[{current_time.strftime('%H:%M:%S')}] 児童 {child_id} -> {other_id}: 距離 {distance} km を送信")
-                            break  # 1人の相手とのみ送信
+            for child_id in existing_child_ids:
+                success = send_step_and_distance_data(child_id, current_time, cycle_count, base_url)
                 
-                # 各送信の間に短い待機（サーバーに負荷をかけないため）
-                time.sleep(0.1)
+                if success:
+                    steps = child_step_counters.get(child_id, 0)
+                    increment = get_steps_increment(cycle_count)
+                    print(f"[{current_time.strftime('%H:%M:%S')}] 児童 {child_id}: 歩数 {steps:,} 歩 (+{increment})")
+                else:
+                    print(f"[{current_time.strftime('%H:%M:%S')}] 児童 {child_id}: 送信失敗")
             
             # 次のサイクルまでの待機
             print(f"--- サイクル {cycle_count} 完了 ---")
@@ -252,6 +237,7 @@ def send_all_dummy_data(base_url: str = "http://localhost:8000", interval: int =
             
     except KeyboardInterrupt:
         print(f"\n\n⏹️ 送信を停止しました（合計 {cycle_count} サイクル）")
+        print(f"📊 最終歩数: {dict((k, f'{v:,}') for k, v in child_step_counters.items())}")
         print("=" * 60)
 
 
