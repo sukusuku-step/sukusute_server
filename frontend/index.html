@@ -618,11 +618,12 @@
         const GOAL = 10000;
 
         let state = {
-            children: [],
+            children: [],  // 生徒一覧（名前、ID）
             selectedChildId: null,
             selectedDate: new Date(),
             todayStats: null,
-            studentSteps: {},
+            studentSteps: {},  // 最新の歩数
+            studentDistances: {},  // 最新の距離
             sortMode: 'steps'
         };
 
@@ -664,18 +665,27 @@
             setInterval(refreshData, 5000);
         }
 
-        // 生徒一覧取得
+        // 生徒一覧取得（名前を保存）
         async function loadChildren() {
+            console.log('loadChildren: 生徒一覧を取得...');
             const result = await apiGet('/api/children');
+            console.log('loadChildren: 応答', result);
             if (result?.status === 'ok') {
                 state.children = result.children;
+                console.log('loadChildren: 生徒数', state.children.length);
+            } else {
+                console.error('loadChildren: エラー', result);
             }
         }
 
         // 今天的集計取得
         async function loadTodayStats() {
             const date = state.selectedDate;
-            const result = await apiGet(`/api/stats/today?year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`);
+            const url = `/api/stats/today?year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`;
+            console.log('loadTodayStats: URL', url);
+            
+            const result = await apiGet(url);
+            console.log('loadTodayStats: 応答', result);
             
             if (result?.status === 'ok') {
                 state.todayStats = result;
@@ -683,6 +693,7 @@
                 
                 // 歩数状態更新
                 if (result.student_ranking) {
+                    console.log('loadTodayStats: 生徒ランキング', result.student_ranking);
                     result.student_ranking.forEach(s => {
                         state.studentSteps[s.child_id] = s.steps;
                     });
@@ -692,6 +703,8 @@
                 renderRanking(result);
                 renderWarnings(result);
                 renderDataLog(result);
+            } else {
+                console.error('loadTodayStats: エラー', result);
             }
         }
 
@@ -740,7 +753,7 @@
             }
         }
 
-        // 生徒グリッド描画
+        // 生徒グリッド描画（最新のデータを表示）
         function renderStudentGrid() {
             const grid = document.getElementById('studentGrid');
             
@@ -765,6 +778,7 @@
 
             grid.innerHTML = sorted.map((child, index) => {
                 const steps = state.studentSteps[child.child_id] || 0;
+                const distance = state.studentDistances[child.child_id] || 0;
                 const percent = Math.min((steps / GOAL) * 100, 100);
                 const isActive = child.child_id === state.selectedChildId;
                 let barClass = 'low';
@@ -779,13 +793,13 @@
                             <span class="student-rank">${index + 1}位</span>
                         </div>
                         <div class="student-steps">${steps > 0 ? steps.toLocaleString() : '-'} 歩</div>
-                        <div class="student-goal">${percent.toFixed(0)}% 達成</div>
+                        <div class="student-goal">${percent.toFixed(0)}% 達成 | ${distance.toFixed(1)} km</div>
                         <div class="goal-bar">
                             <div class="goal-bar-fill ${barClass}" style="width: ${percent}%"></div>
                         </div>
                         <div class="student-meta">
                             <span>目標: ${GOAL.toLocaleString()}歩</span>
-                            <span>${steps >= GOAL ? '✓ 達成' : `${(GOAL - steps).toLocaleString()}歩 剩余`}</span>
+                            <span>${steps >= GOAL ? '✓ 達成' : `${Math.max(0, GOAL - steps).toLocaleString()}歩 剩余`}</span>
                         </div>
                         <div class="device-info">
                             ID: ${child.child_id} | Device: <code>${child.device_id.toString().substring(0, 8)}...</code>
