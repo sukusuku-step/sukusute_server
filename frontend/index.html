@@ -660,7 +660,8 @@
             }
 
             updateLastUpdateTime();
-            setInterval(refreshData, 30000);
+            // 5秒ごとにデータを更新（リアルタイム性向上）
+            setInterval(refreshData, 5000);
         }
 
         // 生徒一覧取得
