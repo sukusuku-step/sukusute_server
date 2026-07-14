@@ -14,6 +14,12 @@ import time
 # 各児童の累積歩数を追跡
 child_step_counters = {}
 
+# 児童の名前リスト
+CHILD_NAMES = [
+    "太郎", "花子", "直樹", "洋子", "明",
+    "さくら", "大輔", "美咲", "拓海", "結衣"
+]
+
 
 def init_step_counters(child_ids: list) -> None:
     """
@@ -31,15 +37,30 @@ def get_steps_increment(cycle_count: int) -> int:
     """
     サイクル数に応じた歩数の増加量を生成
 
-    サイクル数が増えるほど多くの歩数を追加する（線形増加）
+    少量の歩数を追加して、自然な増加をシミュレート
 
     Args:
         cycle_count: 現在のサイクル数
 
     Returns:
-        増加量（100 + cycle_count * 50 歩）
+        増加量（5 + cycle_count // 2 歩）
     """
-    return 100 + cycle_count * 50
+    return 5 + cycle_count // 2
+
+
+def get_child_name(child_id: int) -> str:
+    """
+    児童IDから名前を取得
+
+    Args:
+        child_id: 児童ID
+
+    Returns:
+        児童の名前
+    """
+    # 児童IDに基づいて名前を返す（1-10の名前にマッピング）
+    name_index = (child_id - 1) % len(CHILD_NAMES)
+    return CHILD_NAMES[name_index]
 
 
 def generate_realistic_distance() -> float:
@@ -208,7 +229,7 @@ def send_all_dummy_data(base_url: str = "http://localhost:8000", interval: int =
     print("📊 初期歩数: 全児童 0歩\n")
     
     print("🔄 5秒ごとにデータを送信し続けます...")
-    print("   - 歩数: 累積（1回あたり 100 + サイクル数×50 歩増加）")
+    print("   - 歩数: 累積（1回あたり少量増加）")
     print("   - 距離: ランダムなペアで送信")
     print("   終了するには Ctrl+C を押してください。\n")
     
@@ -227,7 +248,8 @@ def send_all_dummy_data(base_url: str = "http://localhost:8000", interval: int =
                 if success:
                     steps = child_step_counters.get(child_id, 0)
                     increment = get_steps_increment(cycle_count)
-                    print(f"[{current_time.strftime('%H:%M:%S')}] 児童 {child_id}: 歩数 {steps:,} 歩 (+{increment})")
+                    name = get_child_name(child_id)
+                    print(f"[{current_time.strftime('%H:%M:%S')}] {name} (ID:{child_id}): 歩数 {steps:,} 歩 (+{increment})")
                 else:
                     print(f"[{current_time.strftime('%H:%M:%S')}] 児童 {child_id}: 送信失敗")
             
@@ -237,7 +259,10 @@ def send_all_dummy_data(base_url: str = "http://localhost:8000", interval: int =
             
     except KeyboardInterrupt:
         print(f"\n\n⏹️ 送信を停止しました（合計 {cycle_count} サイクル）")
-        print(f"📊 最終歩数: {dict((k, f'{v:,}') for k, v in child_step_counters.items())}")
+        print("📊 最終歩数:")
+        for k, v in child_step_counters.items():
+            name = get_child_name(k)
+            print(f"   {name} (ID:{k}): {v:,} 歩")
         print("=" * 60)
 
 
