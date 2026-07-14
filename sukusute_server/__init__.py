@@ -6,6 +6,7 @@ import datetime
 import math
 
 import fastapi
+from fastapi.middleware.cors import CORSMiddleware
 import sqlalchemy
 import sqlalchemy.orm
 from sqlalchemy import or_
@@ -15,6 +16,15 @@ from sukusute_server import http_models, database_models
 logger = logging.getLogger(__name__)
 
 app = fastapi.FastAPI()
+
+# CORSミドルウェア追加 - フロントエンドからのリクエストを許可
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 開発中は全てを許可（本番では制限すべき）
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/api/health", tags=["API"])
 def health() -> http_models.Result:
@@ -270,6 +280,8 @@ async def get_today_stats(
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
     end_date = datetime.datetime(year, month, day, 23, 59, 59)
     
+    logger.info(f"get_today_stats: year={year}, month={month}, day={day}")
+    
     # 全生徒のその日の歩数
     all_step_data = (await dbsession.execute(
         sqlalchemy.select(database_models.SingleChildData, database_models.Child.name)
@@ -280,14 +292,27 @@ async def get_today_stats(
         )
     )).all()
     
+    logger.info(f"get_today_stats: all_step_data count={len(all_step_data)}")
+    for step_data, name in all_step_data:
+        logger.info(f"  child_id={step_data.child_id}, name={name}, steps={step_data.steps}, date={step_data.date}")
+    
     total_steps = 0
     student_steps = {}
+    student_child_ids = {}
     for step_data, name in all_step_data:
         total_steps += step_data.steps
         student_steps[name] = step_data.steps
+        student_child_ids[name] = step_data.child_id
     
-    num_students = len(student_steps) if student_steps else 1
-    avg_steps = total_steps // num_students
+    # 生徒ID一覧を取得
+    all_children = (await dbsession.execute(
+        sqlalchemy.select(database_models.Child)
+    )).scalars().all()
+    
+    num_students = len(all_children)
+    logger.info(f"get_today_stats: num_students={num_students}, total_steps={total_steps}")
+    
+    avg_steps = total_steps // num_students if num_students > 0 else 0
     walk_time = math.floor(total_steps / 150)
     calories = math.floor(total_steps * 0.008)
     goal_met_count = sum(1 for s in student_steps.values() if s >= 10000)
@@ -341,13 +366,18 @@ async def get_today_stats(
         )
         steps_by_hour.append(http_models.StepsByHour(hour=h, steps=hour_steps))
     
-    # 生徒別ランキング
-    student_ranking = sorted(
-        [{"child_id": sd.child_id, "name": name, "steps": sd.steps} 
-         for sd, name in all_step_data],
-        key=lambda x: x["steps"],
-        reverse=True
-    )
+    # 生徒別ランキング（データがない生徒も含める）
+    student_ranking = []
+    for child in all_children:
+        steps = student_steps.get(child.name, 0)
+        student_ranking.append({
+            "child_id": child.child_id,
+            "name": child.name,
+            "steps": steps
+        })
+    student_ranking.sort(key=lambda x: x["steps"], reverse=True)
+    
+    logger.info(f"get_today_stats: student_ranking={student_ranking}")
     
     return http_models.TodayStatsResponse(
         status="ok",
