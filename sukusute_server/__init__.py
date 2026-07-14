@@ -282,9 +282,9 @@ async def get_today_stats(
     
     total_steps = 0
     student_steps = {}
-    for data, name in all_step_data:
-        total_steps += data.steps
-        student_steps[name] = data.steps
+    for step_data, name in all_step_data:
+        total_steps += step_data.steps
+        student_steps[name] = step_data.steps
     
     num_students = len(student_steps) if student_steps else 1
     avg_steps = total_steps // num_students
@@ -310,41 +310,41 @@ async def get_today_stats(
     
     # 歩数が普段より少ない生徒を検出（警告）
     warnings = []
-    for data, name in all_step_data:
+    for step_data, name in all_step_data:
         # この生徒の過去7日間の平均を計算
         week_start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=7)
         week_data = (await dbsession.execute(
             sqlalchemy.select(database_models.SingleChildData)
             .where(
-                database_models.SingleChildData.child_id == data.child_id,
+                database_models.SingleChildData.child_id == step_data.child_id,
                 database_models.SingleChildData.date >= week_start
             )
         )).scalars().all()
         
         if len(week_data) >= 3:
             avg_weekly = sum(d.steps for d in week_data) / len(week_data)
-            if avg_weekly > 0 and data.steps < avg_weekly * 0.5:
+            if avg_weekly > 0 and step_data.steps < avg_weekly * 0.5:
                 warnings.append(http_models.StepWarning(
-                    child_id=data.child_id,
+                    child_id=step_data.child_id,
                     name=name,
-                    current_steps=data.steps,
+                    current_steps=step_data.steps,
                     average_steps=math.floor(avg_weekly),
-                    percent=math.floor(data.steps / avg_weekly * 100)
+                    percent=math.floor(step_data.steps / avg_weekly * 100)
                 ))
     
     # 時間別集計
     steps_by_hour = []
     for h in range(24):
         hour_steps = sum(
-            d.steps for d in all_step_data
-            if d.date.hour == h
+            sd.steps for sd, _ in all_step_data
+            if sd.date.hour == h
         )
         steps_by_hour.append(http_models.StepsByHour(hour=h, steps=hour_steps))
     
     # 生徒別ランキング
     student_ranking = sorted(
-        [{"child_id": data.child_id, "name": name, "steps": data.steps} 
-         for data, name in all_step_data],
+        [{"child_id": sd.child_id, "name": name, "steps": sd.steps} 
+         for sd, name in all_step_data],
         key=lambda x: x["steps"],
         reverse=True
     )
