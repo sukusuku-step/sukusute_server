@@ -6,7 +6,6 @@
 
 const API = "http://localhost:8000";
 let curId = null;
-const childNames = {};
 
 // ページ読み込み完了時
 document.addEventListener("DOMContentLoaded", function() {
@@ -50,7 +49,6 @@ async function loadChildren() {
             if (r.ok) {
                 const j = await r.json();
                 ids.push(i);
-                childNames[i] = j.name;
             }
         } catch (e) {
             // 無視
@@ -66,7 +64,7 @@ async function loadChildren() {
     }
     
     select.innerHTML = ids.map(function(id) {
-        return "<option value=\"" + id + "\">" + childNames[id] + " (ID: " + id + ")</option>";
+        return "<option value=\"" + id + "\">ID: " + id + "</option>";
     }).join("");
     
     select.disabled = false;
@@ -104,7 +102,7 @@ async function loadSelectedChildData() {
  */
 function showData(d) {
     document.getElementById("childDetailCard").style.display = "block";
-    document.getElementById("childName").textContent = d.name;
+    document.getElementById("childName").textContent = "ID: " + d.child_id;
     document.getElementById("deviceId").textContent = d.device_id;
     document.getElementById("childId").textContent = d.child_id;
     
@@ -153,7 +151,7 @@ function showDist(data) {
         const date = new Date(d.date).toLocaleDateString("ja-JP", {
             month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
         });
-        const name = childNames[d.with_child] || "お子さん " + d.with_child;
+        const name = "ID: " + d.with_child;
         return "<li class='distance-item'>" +
             "<div><div class='child-name'>" + name + "</div>" +
             "<div class='distance-date'>" + date + "</div></div>" +

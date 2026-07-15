@@ -5,7 +5,7 @@ import threading
 import time
 
 
-def run_frontend(port: int = 8080):
+def run_frontend(port: int = 3000):
     """フロントエンドサーバを起動"""
     frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
     print(f"[フロントエンド] サーバを起動中... http://localhost:{port}")
@@ -43,7 +43,7 @@ def run_backend(port: int = 8000):
 def main():
     """メイン関数 - バックエンドとフロントエンドを同時に起動"""
     # フロントエンドをバックグラウンドスレッドで起動
-    frontend_thread = threading.Thread(target=run_frontend, args=(8080,), daemon=True)
+    frontend_thread = threading.Thread(target=run_frontend, args=(3000,), daemon=True)
     frontend_thread.start()
     time.sleep(1)  # フロントエンドの起動を待つ
     
