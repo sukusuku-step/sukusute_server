@@ -41,8 +41,9 @@ async function init() {
         renderStudentGrid();
     });
 
-    // データ読み込み
+    // データ読み込み（生徒一覧を先に取得）
     await loadChildren();
+    console.log('init: 初期化後、生徒数', state.children.length);
     await loadTodayStats();
 
     // 最初に選択
@@ -57,26 +58,39 @@ async function init() {
 
 // 生徒一覧取得（名前を保存）
 async function loadChildren() {
-    console.log('loadChildren: 生徒一覧を取得...');
-    const result = await apiGet('/api/children');
-    console.log('loadChildren: 応答', result);
-    if (result?.status === 'ok') {
-        const oldChildrenCount = state.children.length;
+    console.log('loadChildren: 生徒一覧を取得開始...');
+    try {
+        const result = await apiGet('/api/children');
+        console.log('loadChildren: API応答:', result);
         
-        // 生徒数に変化がある場合、状態を更新して画面を再描画
-        if (oldChildrenCount !== result.children.length) {
-            console.log('loadChildren: 生徒数変化検出', oldChildrenCount, '->', result.children.length);
-            state.children = result.children;
-            console.log('loadChildren: 生徒数', state.children.length);
-            // 画面を再描画
+        if (result && result.status === 'ok' && result.children) {
+            const newChildren = result.children;
+            const oldCount = state.children.length;
+            
+            console.log('loadChildren: oldCount=' + oldCount + ', newCount=' + newChildren.length);
+            console.log('loadChildren: oldIds=', state.children.map(c => c.child_id));
+            console.log('loadChildren: newIds=', newChildren.map(c => c.child_id));
+            
+            // 常に生徒データを更新
+            state.children = newChildren;
+            console.log('loadChildren: updated, total=' + state.children.length);
+            
+            // 常にグリッドを再描画
+            console.log('loadChildren: calling renderStudentGrid...');
             renderStudentGrid();
+            console.log('loadChildren: renderStudentGrid done');
         } else {
-            // 生徒数が同じでも生徒IDリストを更新（新しい生徒が追加されている可能性）
-            state.children = result.children;
+            console.error('loadChildren: invalid response:', result);
         }
-    } else {
-        console.error('loadChildren: エラー', result);
+    } catch (error) {
+        console.error('loadChildren: exception:', error);
     }
+}
+
+// 生徒グリッドを強制的に再描画
+function forceRefreshStudentGrid() {
+    console.log('forceRefreshStudentGrid: 呼び出し', state.children.length, '人の生徒');
+    renderStudentGrid();
 }
 
 // 今天的集計取得
@@ -94,14 +108,19 @@ async function loadTodayStats() {
             state.todayStats = result;
             updateStats(result);
 
-            // 歩数状態更新
-            if (result.student_ranking) {
+            // 歩数状態更新 - 常に更新
+            if (result.student_ranking && Array.isArray(result.student_ranking)) {
                 console.log('loadTodayStats: 生徒ランキング', result.student_ranking);
+                // 既存の歩数データをクリア
+                state.studentSteps = {};
+                // 新しい歩数データを更新
                 result.student_ranking.forEach(s => {
                     state.studentSteps[s.child_id] = s.steps;
                 });
+                console.log('loadTodayStats: 更新後の歩数データ', state.studentSteps);
             }
 
+            // 常にグリッドを再描画
             renderStudentGrid();
             renderRanking(result);
             renderWarnings(result);
