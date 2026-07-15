@@ -769,7 +769,11 @@
                     sorted.sort((a, b) => (state.studentSteps[b.child_id] || 0) - (state.studentSteps[a.child_id] || 0));
                     break;
                 case 'name':
-                    sorted.sort((a, b) => a.name.localeCompare(b.name));
+                    // 名前が存在する場合は名前順、なければID順
+                    sorted.sort((a, b) => {
+                        if (a.name && b.name) return a.name.localeCompare(b.name);
+                        return a.child_id - b.child_id;
+                    });
                     break;
                 case 'rank':
                     sorted.sort((a, b) => a.child_id - b.child_id);
@@ -789,7 +793,7 @@
                 return `
                     <div class="student-card ${isActive ? 'active' : ''}" onclick="selectChild(${child.child_id})">
                         <div class="student-card-header">
-                            <span class="student-name">${child.name}</span>
+                            <span class="student-name">ID: ${child.child_id}</span>
                             <span class="student-rank">${index + 1}位</span>
                         </div>
                         <div class="student-steps">${steps > 0 ? steps.toLocaleString() : '-'} 歩</div>
@@ -832,7 +836,7 @@
             const title = document.getElementById('modalTitle');
             const content = document.getElementById('modalContent');
 
-            title.textContent = `${child.name} - 歩数詳細`;
+            title.textContent = `ID: ${child.child_id} - 歩数詳細`;
 
             // 時間別チャート
             const maxHourly = Math.max(...stepData.steps_by_hour.map(d => d.steps), 1);
@@ -924,7 +928,7 @@
                 <div style="font-size: 12px; color: #8898aa; margin-bottom: 8px;">🏃 歩数ランキング</div>
                 ${top10.map((s, i) => `
                     <div class="ranking-item">
-                        <span class="ranking-name">${i + 1}. ${s.name}</span>
+                        <span class="ranking-name">${i + 1}. ID: ${s.child_id}</span>
                         <span class="ranking-steps">${s.steps.toLocaleString()} 歩</span>
                     </div>
                 `).join('')}
@@ -944,7 +948,7 @@
                     <div style="font-size: 12px; color: #8898aa; margin: 12px 0 8px;">🤝 距離ランキング</div>
                     ${top10.map((s, i) => `
                         <div class="ranking-item">
-                            <span class="ranking-name">${i + 1}. ${s.name}</span>
+                            <span class="ranking-name">${i + 1}. ID: ${s.child_id}</span>
                             <span class="ranking-steps">${s.total_distance.toFixed(1)} km</span>
                         </div>
                     `).join('')}
@@ -967,7 +971,7 @@
                     const topPairs = stats.top_pairs.slice(0, 5);
                     topPairsContainer.innerHTML = topPairs.map((p, i) => `
                         <div class="ranking-item">
-                            <span class="ranking-name">${i + 1}. ${p.name1} ↔ ${p.name2}</span>
+                            <span class="ranking-name">${i + 1}. ID: ${p.child_id_1} ↔ ID: ${p.child_id_2}</span>
                             <span class="ranking-steps">${p.distance.toFixed(1)} km</span>
                         </div>
                     `).join('');
@@ -985,7 +989,7 @@
 
             container.innerHTML = stats.warnings.map(w => `
                 <div class="warning-item">
-                    <span class="warning-name">${w.name}</span>: 普段の${w.percent}%しか歩いていません
+                    <span class="warning-name">ID: ${w.child_id}</span>: 普段の${w.percent}%しか歩いていません
                 </div>
             `).join('');
         }
@@ -1009,7 +1013,7 @@
                 return `
                     <div class="ranking-item">
                         <span style="color: #8898aa; font-size: 11px;">${timeStr}</span>
-                        <span style="color: #64ffda; font-size: 12px;">${s.name}: ${s.steps.toLocaleString()}歩</span>
+                        <span style="color: #64ffda; font-size: 12px;">ID: ${s.child_id}: ${s.steps.toLocaleString()}歩</span>
                     </div>
                 `;
             }).join('');
