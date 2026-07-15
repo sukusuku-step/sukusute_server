@@ -5,7 +5,7 @@ const API_BASE = 'http://localhost:8000';
 // WSL環境で外部からアクセスする場合、以下をWSLのIPアドレスに変更:
 // const API_BASE = 'http://127.18.174.255:8000';
 
-const GOAL = 10000;
+const GOAL = 3000;
 
 let state = {
     children: [],  // 生徒一覧（名前、ID）
@@ -61,8 +61,19 @@ async function loadChildren() {
     const result = await apiGet('/api/children');
     console.log('loadChildren: 応答', result);
     if (result?.status === 'ok') {
-        state.children = result.children;
-        console.log('loadChildren: 生徒数', state.children.length);
+        const oldChildrenCount = state.children.length;
+        
+        // 生徒数に変化がある場合、状態を更新して画面を再描画
+        if (oldChildrenCount !== result.children.length) {
+            console.log('loadChildren: 生徒数変化検出', oldChildrenCount, '->', result.children.length);
+            state.children = result.children;
+            console.log('loadChildren: 生徒数', state.children.length);
+            // 画面を再描画
+            renderStudentGrid();
+        } else {
+            // 生徒数が同じでも生徒IDリストを更新（新しい生徒が追加されている可能性）
+            state.children = result.children;
+        }
     } else {
         console.error('loadChildren: エラー', result);
     }
@@ -201,8 +212,16 @@ function renderStudentGrid() {
     }).join('');
 }
 
-// 生徒選択
+// 生徒選択（トグル）
 async function selectChild(childId, skipModal = false) {
+    // 既に選択されている場合は解除
+    if (state.selectedChildId === childId) {
+        state.selectedChildId = null;
+        closeModal();
+        renderStudentGrid();
+        return;
+    }
+
     state.selectedChildId = childId;
     const child = state.children.find(c => c.child_id === childId);
     if (!child) return;
