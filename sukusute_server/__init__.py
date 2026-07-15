@@ -160,18 +160,21 @@ async def get_child_steps(
     if not child:
         raise fastapi.exceptions.HTTPException(404, "No such child found.")
     
-    # 歩数データ
-    step_data = (await dbsession.execute(
+    # 歩数データ（最新のレコードのみを取得）
+    latest_step_data = (await dbsession.execute(
         sqlalchemy.select(database_models.SingleChildData)
         .where(
             database_models.SingleChildData.child_id == child_id,
             database_models.SingleChildData.date >= start_date,
             database_models.SingleChildData.date <= end_date
         )
-        .order_by(database_models.SingleChildData.date)
-    )).scalars().all()
+        .order_by(database_models.SingleChildData.date.desc())
+        .limit(1)
+    )).scalar()
     
-    # 前日同日比較用
+    today_steps = latest_step_data.steps if latest_step_data else 0
+    
+    # 前日同日比較用（最新のレコードのみ）
     prev_start = datetime.datetime(year, month, day - 1, 0, 0, 0) if day > 1 else datetime.datetime(year, month, 1, 0, 0, 0)
     prev_end = datetime.datetime(year, month, day - 1, 23, 59, 59) if day > 1 else datetime.datetime(year, month, 1, 23, 59, 59)
     
@@ -182,10 +185,11 @@ async def get_child_steps(
             database_models.SingleChildData.date >= prev_start,
             database_models.SingleChildData.date <= prev_end
         )
-    )).scalars().all()
+        .order_by(database_models.SingleChildData.date.desc())
+        .limit(1)
+    )).scalar()
     
-    today_steps = sum(d.steps for d in step_data)
-    yesterday_steps = sum(d.steps for d in prev_step_data)
+    yesterday_steps = prev_step_data.steps if prev_step_data else 0
     
     # 歩行時間（歩数/150 = 分）
     walk_time = math.floor(today_steps / 150)
@@ -218,16 +222,7 @@ async def get_child_steps(
         device_id=child.device_id,
         date=start_date,
         steps=today_steps,
-        steps_by_hour=[
-            http_models.StepsByHour(
-                hour=h,
-                steps=sum(
-                    d.steps for d in step_data
-                    if d.date.hour == h
-                )
-            )
-            for h in range(24)
-        ],
+        steps_by_hour=[],  # 最新データのみなので時間別は空
         history=history,
         previous_day_steps=yesterday_steps,
         step_change_percent=((today_steps - yesterday_steps) / yesterday_steps * 100) if yesterday_steps > 0 else 0,
@@ -282,32 +277,35 @@ async def get_today_stats(
     
     logger.info(f"get_today_stats: year={year}, month={month}, day={day}")
     
-    # 全生徒のその日の歩数（child_idごとに集計）
+    # 全生徒のその日の最新の歩数データ
     all_step_data = (await dbsession.execute(
         sqlalchemy.select(
             database_models.SingleChildData.child_id,
             database_models.Child.name,
-            sqlalchemy.func.sum(database_models.SingleChildData.steps).label('total_steps')
+            database_models.SingleChildData.steps,
+            database_models.SingleChildData.date
         )
         .join(database_models.Child, database_models.SingleChildData.child_id == database_models.Child.child_id)
         .where(
             database_models.SingleChildData.date >= start_date,
             database_models.SingleChildData.date <= end_date
         )
-        .group_by(database_models.SingleChildData.child_id, database_models.Child.name)
+        .order_by(database_models.SingleChildData.child_id, database_models.SingleChildData.date.desc())
     )).all()
     
     logger.info(f"get_today_stats: all_step_data count={len(all_step_data)}")
-    for child_id, name, total_steps_val in all_step_data:
-        logger.info(f"  child_id={child_id}, name={name}, total_steps={total_steps_val}, date={start_date}")
+    for child_id, name, steps_val, date_val in all_step_data:
+        logger.info(f"  child_id={child_id}, name={name}, steps={steps_val}, date={date_val}")
     
-    total_steps = 0
+    # child_idごとに最新のデータのみを抽出
     student_steps = {}
     student_child_ids = {}
-    for child_id, name, total_steps_val in all_step_data:
-        total_steps += total_steps_val
-        student_steps[child_id] = total_steps_val
-        student_child_ids[name] = child_id
+    for child_id, name, steps_val, date_val in all_step_data:
+        if child_id not in student_steps:
+            student_steps[child_id] = steps_val
+            student_child_ids[name] = child_id
+    
+    total_steps = sum(student_steps.values())
     
     # 生徒ID一覧を取得
     all_children = (await dbsession.execute(
@@ -340,7 +338,7 @@ async def get_today_stats(
     
     # 歩数が普段より少ない生徒を検出（警告）
     warnings = []
-    for child_id_val, name, total_steps_val in all_step_data:
+    for child_id_val, name, steps_val, date_val in list(all_step_data):
         # この生徒の過去7日間の平均を計算
         week_start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=7)
         week_data = (await dbsession.execute(
@@ -353,13 +351,13 @@ async def get_today_stats(
         
         if len(week_data) >= 3:
             avg_weekly = sum(d.steps for d in week_data) / len(week_data)
-            if avg_weekly > 0 and total_steps_val < avg_weekly * 0.5:
+            if avg_weekly > 0 and steps_val < avg_weekly * 0.5:
                 warnings.append(http_models.StepWarning(
                     child_id=child_id_val,
                     name=name,
-                    current_steps=total_steps_val,
+                    current_steps=steps_val,
                     average_steps=math.floor(avg_weekly),
-                    percent=math.floor(total_steps_val / avg_weekly * 100)
+                    percent=math.floor(steps_val / avg_weekly * 100)
                 ))
     
     # 時間別集計（その日の全データから時間別を集計）
