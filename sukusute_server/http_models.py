@@ -6,39 +6,49 @@ import uuid
 
 import pydantic
 
+
+# ===== 基本モデル =====
+
 class Result(pydantic.BaseModel):
-    """ 通常エンドポイントの結果 """
+    """ エンドポイントの結果 """
     status: typing.Literal["ok", "error"]
     msg: typing.Optional[str] = None
 
+
+# ===== 児童データモデル =====
+
 class ChildSingleData(pydantic.BaseModel):
-    """ 単独の児童についてのデータ """
+    """ 単独の児童についてのデータ（歩数など） """
     date: datetime.datetime
     steps: int
 
+
 class ChildDistanceData(pydantic.BaseModel):
-    """ 児童の距離についてのデータ """
+    """ 児童の距離データ """
     date: datetime.datetime
     with_child: int
     distance: float
+
 
 class ChildDataRecord(pydantic.BaseModel):
     """ デバイスからの受信データ """
     child_id: int
     singledata: typing.Optional[ChildSingleData] = None
     distances: typing.Optional[list[ChildDistanceData]] = None
-    
+
     model_config = pydantic.ConfigDict(extra="ignore")
 
+
 class ChildDataResponse(Result):
-    """ Childに対するすべての情報 """
+    """ 児童のすべての情報を含むレスポンス """
     child_id: int
     name: str
     device_id: uuid.UUID
     singledata: list[ChildSingleData]
     distancedata: list[ChildDistanceData]
 
-# ===== 新しいレスポンスモデル =====
+
+# ===== 児童一覧モデル =====
 
 class ChildListItem(pydantic.BaseModel):
     """ 生徒一覧の項目 """
@@ -46,27 +56,34 @@ class ChildListItem(pydantic.BaseModel):
     name: str
     device_id: uuid.UUID
 
+
 class ChildrenListResponse(Result):
     """ 生徒一覧レスポンス """
     children: list[ChildListItem]
+
+
+# ===== 歩数データモデル =====
 
 class StepsByHour(pydantic.BaseModel):
     """ 時間別歩数 """
     hour: int
     steps: int
 
+
 class DailySteps(pydantic.BaseModel):
     """ 日別歩数 """
     date: datetime.datetime
     steps: int
 
+
 class StepWarning(pydantic.BaseModel):
-    """ 歩数警告 """
+    """ 歩数警告 - 普段の平均に対する歩数が少ない生徒 """
     child_id: int
     name: str
     current_steps: int
     average_steps: int
     percent: int  # 普段の平均に対する割合(%)
+
 
 class ChildStepsResponse(Result):
     """ 特定生徒の歩数レスポンス """
@@ -83,11 +100,13 @@ class ChildStepsResponse(Result):
     calories: int
     goal_met: bool
 
+
 class ChildStepsHistoryResponse(Result):
     """ 特定生徒の歩数履歴レスポンス """
     child_id: int
     name: str
     history: list[DailySteps]
+
 
 # ===== 距離データモデル =====
 
@@ -98,10 +117,12 @@ class ChildDistance(pydantic.BaseModel):
     distance: float
     date: datetime.datetime
 
+
 class DistanceStat(pydantic.BaseModel):
-    """ 距離統計 """
+    """ 距離統計（最大/最小） """
     with_child: int
     distance: float
+
 
 class StudentDistanceStat(pydantic.BaseModel):
     """ 生徒別距離統計 """
@@ -111,6 +132,7 @@ class StudentDistanceStat(pydantic.BaseModel):
     avg_distance: float
     meeting_count: int
 
+
 class PairDistance(pydantic.BaseModel):
     """ ペア別距離 """
     child_id_1: int
@@ -118,6 +140,7 @@ class PairDistance(pydantic.BaseModel):
     name1: str
     name2: str
     distance: float
+
 
 class ChildDistancesResponse(Result):
     """ 特定生徒の距離データレスポンス """
@@ -132,6 +155,7 @@ class ChildDistancesResponse(Result):
     min_distance: typing.Optional[DistanceStat] = None
     meeting_count: int
 
+
 class DistanceStatsResponse(Result):
     """ 距離データ集計レスポンス """
     date: datetime.datetime
@@ -140,6 +164,9 @@ class DistanceStatsResponse(Result):
     avg_distance: float
     student_stats: list[StudentDistanceStat]
     top_pairs: list[PairDistance]
+
+
+# ===== 集計情報モデル =====
 
 class TodayStatsResponse(Result):
     """ 今日の集計情報レスポンス """
@@ -155,6 +182,7 @@ class TodayStatsResponse(Result):
     steps_by_hour: list[StepsByHour]
     student_ranking: list[typing.Dict[str, typing.Any]]
     warnings: list[StepWarning]
+
 
 class MonthlyStatsResponse(Result):
     """ 月間集計情報レスポンス """

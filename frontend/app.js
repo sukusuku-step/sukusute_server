@@ -5,19 +5,22 @@ const API_BASE = 'http://localhost:8000';
 // WSL環境で外部からアクセスする場合、以下をWSLのIPアドレスに変更:
 // const API_BASE = 'http://127.18.174.255:8000';
 
+// 目標歩数
 const GOAL = 3000;
 
+// 状態管理
 let state = {
-    children: [],  // 生徒一覧（名前、ID）
-    selectedChildId: null,
-    selectedDate: new Date(),
-    todayStats: null,
-    studentSteps: {},  // 最新の歩数
-    studentDistances: {},  // 最新の距離
-    sortMode: 'steps'
+    children: [],           // 生徒一覧（名前、ID）
+    selectedChildId: null,  // 選択した児童ID
+    selectedDate: new Date(), // 選択した日付
+    todayStats: null,       // 今日の集計情報
+    studentSteps: {},       // 最新の歩数
+    studentDistances: {},   // 最新の距離
+    sortMode: 'steps'       // ソートモード
 };
 
-// API通信
+// ===== API通信 =====
+
 async function apiGet(url) {
     try {
         const response = await fetch(`${API_BASE}${url}`);
@@ -29,13 +32,14 @@ async function apiGet(url) {
     }
 }
 
-// 初期化
+// ===== 初期化 =====
+
 async function init() {
-    // 日付セレクター
+    // 日付セレクターを設定
     document.getElementById('dateSelector').value = formatDate(new Date());
     state.selectedDate = new Date();
 
-    // ソートモード
+    // ソートモードのイベントリスナーを追加
     document.getElementById('sortOrder').addEventListener('change', (e) => {
         state.sortMode = e.target.value;
         renderStudentGrid();
@@ -56,25 +60,26 @@ async function init() {
     setTimeout(refreshData, 5000);
 }
 
-// 生徒一覧取得（名前を保存）
+// ===== 生徒データ =====
+
 async function loadChildren() {
     console.log('loadChildren: 生徒一覧を取得開始...');
     try {
         const result = await apiGet('/api/children');
         console.log('loadChildren: API応答:', result);
-        
+
         if (result && result.status === 'ok' && result.children) {
             const newChildren = result.children;
             const oldCount = state.children.length;
-            
+
             console.log('loadChildren: oldCount=' + oldCount + ', newCount=' + newChildren.length);
             console.log('loadChildren: oldIds=', state.children.map(c => c.child_id));
             console.log('loadChildren: newIds=', newChildren.map(c => c.child_id));
-            
+
             // 常に生徒データを更新
             state.children = newChildren;
             console.log('loadChildren: updated, total=' + state.children.length);
-            
+
             // 常にグリッドを再描画
             console.log('loadChildren: calling renderStudentGrid...');
             renderStudentGrid();
@@ -93,7 +98,8 @@ function forceRefreshStudentGrid() {
     renderStudentGrid();
 }
 
-// 今天的集計取得
+// ===== 集計データ =====
+
 async function loadTodayStats() {
     try {
         console.log('loadTodayStats: 開始');
@@ -134,7 +140,7 @@ async function loadTodayStats() {
     }
 }
 
-// 統計更新
+// 統計情報を更新
 async function updateStats(stats) {
     document.getElementById('totalSteps').textContent =
         stats.total_steps > 0 ? stats.total_steps.toLocaleString() : '-';
@@ -157,10 +163,12 @@ async function updateStats(stats) {
     await updateMeetingCount();
 }
 
-// 交流回数更新
+// 交流回数を更新
 async function updateMeetingCount() {
     const date = state.selectedDate;
-    const result = await apiGet(`/api/stats/distance-today?year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`);
+    const result = await apiGet(
+        `/api/stats/distance-today?year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`
+    );
 
     if (result?.status === 'ok') {
         document.getElementById('meetingCount').textContent =
@@ -171,7 +179,8 @@ async function updateMeetingCount() {
     }
 }
 
-// 生徒グリッド描画（最新のデータを表示）
+// ===== 生徒グリッド描画 =====
+
 function renderStudentGrid() {
     const grid = document.getElementById('studentGrid');
 
@@ -184,7 +193,10 @@ function renderStudentGrid() {
     let sorted = [...state.children];
     switch (state.sortMode) {
         case 'steps':
-            sorted.sort((a, b) => (state.studentSteps[b.child_id] || 0) - (state.studentSteps[a.child_id] || 0));
+            sorted.sort((a, b) =>
+                (state.studentSteps[b.child_id] || 0) -
+                (state.studentSteps[a.child_id] || 0)
+            );
             break;
         case 'name':
             // 名前が存在する場合は名前順、なければID順
@@ -231,7 +243,8 @@ function renderStudentGrid() {
     }).join('');
 }
 
-// 生徒選択（トグル）
+// ===== 生徒選択・モーダル =====
+
 async function selectChild(childId, skipModal = false) {
     // 既に選択されている場合は解除
     if (state.selectedChildId === childId) {
@@ -245,9 +258,11 @@ async function selectChild(childId, skipModal = false) {
     const child = state.children.find(c => c.child_id === childId);
     if (!child) return;
 
-    // 歩数データ取得
+    // 歩数データを取得
     const date = state.selectedDate;
-    const result = await apiGet(`/api/children/${childId}/steps?year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`);
+    const result = await apiGet(
+        `/api/children/${childId}/steps?year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`
+    );
 
     if (result?.status === 'ok') {
         state.studentSteps[childId] = result.steps;
@@ -259,7 +274,7 @@ async function selectChild(childId, skipModal = false) {
     }
 }
 
-// モーダル表示
+// モーダルを表示
 function showChildModal(child, stepData) {
     const modal = document.getElementById('modalOverlay');
     const title = document.getElementById('modalTitle');
@@ -267,7 +282,7 @@ function showChildModal(child, stepData) {
 
     title.textContent = `ID: ${child.child_id} - 歩数詳細`;
 
-    // 時間別チャート
+    // 時間別チャートを作成
     const maxHourly = Math.max(...stepData.steps_by_hour.map(d => d.steps), 1);
     const hourlyChart = stepData.steps_by_hour.map(d => {
         const height = (d.steps / maxHourly) * 160;
@@ -283,16 +298,17 @@ function showChildModal(child, stepData) {
         `;
     }).join('');
 
-    // 履歴チャート（過去7日）
+    // 履歴チャート（過去7日）を作成
     let historyChart = '';
     if (stepData.history && stepData.history.length > 0) {
         const maxSteps = Math.max(...stepData.history.map(h => h.steps), 1);
-        const days = ['日', '月', '火', '水', '木', '金', '土'];
         const historyItems = stepData.history.map((d, i) => {
             const height = (d.steps / maxSteps) * 120;
             const dateStr = d.date ? `${d.date.getMonth()+1}/${d.date.getDate()}` : `D${i+1}`;
             const barClass = d.steps >= GOAL ? 'high' : 'medium';
-            const bgColor = d.steps >= GOAL ? 'linear-gradient(180deg, #64ffda, #00ff88)' : 'linear-gradient(180deg, #749aff, #4285f4)';
+            const bgColor = d.steps >= GOAL
+                ? 'linear-gradient(180deg, #64ffda, #00ff88)'
+                : 'linear-gradient(180deg, #749aff, #4285f4)';
             return `
                 <div class="history-bar-item">
                     <span class="history-value">${d.steps.toLocaleString()}</span>
@@ -332,6 +348,7 @@ function showChildModal(child, stepData) {
     modal.classList.add('active');
 }
 
+// モーダルを閉じる
 function closeModal() {
     document.getElementById('modalOverlay').classList.remove('active');
 }
@@ -341,7 +358,8 @@ document.getElementById('modalOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) closeModal();
 });
 
-// ランキング描画
+// ===== ランキング描画 =====
+
 function renderRanking(stats) {
     const container = document.getElementById('rankingList');
     if (!stats?.student_ranking) {
@@ -364,9 +382,9 @@ function renderRanking(stats) {
     `;
 }
 
-// ランキング描画（距離情報は取得のみ）
+// 距離ランキングを描画
 function renderDistanceRanking(stats) {
-    // トップペア描画
+    // トップペアを描画
     if (stats?.top_pairs && stats.top_pairs.length > 0) {
         const topPairsContainer = document.getElementById('topPairsList');
         if (topPairsContainer) {
@@ -381,7 +399,8 @@ function renderDistanceRanking(stats) {
     }
 }
 
-// 警告描画
+// ===== 警告・ログ描画 =====
+
 function renderWarnings(stats) {
     const container = document.getElementById('warningsList');
     if (!stats?.warnings || stats.warnings.length === 0) {
@@ -396,7 +415,7 @@ function renderWarnings(stats) {
     `).join('');
 }
 
-// データログ描画
+// データログを描画
 function renderDataLog(stats) {
     const container = document.getElementById('dataLog');
     if (!stats?.student_ranking || stats.student_ranking.length === 0) {
@@ -421,7 +440,8 @@ function renderDataLog(stats) {
     }).join('');
 }
 
-// 日付変更
+// ===== 日付変更 =====
+
 async function onDateChange() {
     const value = document.getElementById('dateSelector').value;
     if (value) {
@@ -435,14 +455,16 @@ async function onDateChange() {
 
 document.getElementById('dateSelector').addEventListener('change', onDateChange);
 
-// 更新時間
+// ===== ユーティリティ =====
+
+// 更新時間を更新
 function updateLastUpdateTime() {
     const now = new Date();
     document.getElementById('lastUpdate').textContent =
         `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 }
 
-// データ更新
+// データを更新
 async function refreshData() {
     try {
         updateLastUpdateTime();
@@ -459,10 +481,10 @@ async function refreshData() {
     }
 }
 
-// フォーマット
+// 日付をフォーマット
 function formatDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-// 初期化
+// ===== 初期化実行 =====
 init();
