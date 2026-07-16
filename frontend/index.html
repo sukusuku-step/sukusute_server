@@ -11,42 +11,51 @@
     <div class="header">
         <h1>🏃 すくすくステップ</h1>
         <div class="header-controls">
+            <!-- リアルタイム更新インジケーター -->
             <div class="live-indicator">
                 <span class="live-dot"></span>
                 <span>リアルタイム更新中</span>
             </div>
+            <!-- 日付セレクター -->
             <input type="date" id="dateSelector" class="date-selector">
+            <!-- ソートモード選択 -->
             <select id="sortOrder" class="sort-select">
                 <option value="steps">歩数順</option>
                 <option value="name">名前順</option>
                 <option value="rank">ID順</option>
             </select>
+            <!-- 最終更新時刻 -->
             <span>最終更新: <span id="lastUpdate">-</span></span>
         </div>
     </div>
 
     <!-- 統計カード -->
     <div class="stats-grid">
+        <!-- 総歩数 -->
         <div class="stat-card">
             <div class="label">総歩数</div>
             <div class="value" id="totalSteps">-</div>
             <div class="sub" id="stepChangeSub"></div>
         </div>
+        <!-- 平均歩数 -->
         <div class="stat-card">
             <div class="label">平均歩数</div>
             <div class="value" id="avgSteps">-</div>
             <div class="sub">目標: 3,000歩</div>
         </div>
+        <!-- 登録生徒数 -->
         <div class="stat-card">
             <div class="label">登録生徒</div>
             <div class="value" id="totalStudents">-</div>
             <div class="sub"></div>
         </div>
+        <!-- 目標達成者 -->
         <div class="stat-card">
             <div class="label">目標達成者</div>
             <div class="value" id="goalMetCount">-<span class="unit">人</span></div>
             <div class="sub" id="goalMetPercent">/ -人</div>
         </div>
+        <!-- 交流回数 -->
         <div class="stat-card">
             <div class="label">交流回数</div>
             <div class="value" id="meetingCount">-</div>
@@ -68,6 +77,7 @@
 
         <!-- 右カラム: ランキング・警告 -->
         <div>
+            <!-- 歩数ランキング -->
             <div class="sidebar-card">
                 <h2>🏆 ランキング（上位10名）</h2>
                 <div id="rankingList">
@@ -75,6 +85,7 @@
                 </div>
             </div>
 
+            <!-- 歩数警告 -->
             <div class="sidebar-card">
                 <h2>⚠️ 歩数警告</h2>
                 <div id="warningsList">
@@ -82,6 +93,7 @@
                 </div>
             </div>
 
+            <!-- 距離トップペア -->
             <div class="sidebar-card">
                 <h2>🔗 トップペア（距離）</h2>
                 <div id="topPairsList">
@@ -89,6 +101,7 @@
                 </div>
             </div>
 
+            <!-- データログ -->
             <div class="sidebar-card">
                 <h2>📊 データログ</h2>
                 <div id="dataLog">
@@ -98,7 +111,7 @@
         </div>
     </div>
 
-    <!-- モーダル -->
+    <!-- 生徒詳細モーダル -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal">
             <div class="modal-header">
