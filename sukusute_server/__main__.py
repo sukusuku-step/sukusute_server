@@ -1,5 +1,7 @@
 """ HTTPサーバの起動 (バックエンド + フロントエンド) """
 import os
+import sys
+import subprocess
 import threading
 import time
 
@@ -37,7 +39,6 @@ def run_backend(port: int = 8000):
         print(f"[バックエンド] 起動エラー: 依存関係がインストールされていません - {e}")
         print("[バックエンド] pyproject.tomlの依存関係をインストールしてください:")
         print("  uv sync")
-        print("  または: pip install fastapi uvicorn sqlalchemy pydantic alembic")
     except Exception as e:
         print(f"[バックエンド] エラー: {e}")
 

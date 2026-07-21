@@ -1,16 +1,12 @@
-// APIベースURL設定 - フロントエンド(3000)とバックエンド(8000)が同じマシンで動作
-// 同じマシン内での通信なので、localhostを使用
-const API_BASE = 'http://localhost:8000';
-
-// WSL環境で外部からアクセスする場合、以下をWSLのIPアドレスに変更:
-// const API_BASE = 'http://127.18.174.255:8000';
+// APIベースURL設定
+const API_BASE = 'http://192.168.11.2:8000';
 
 // 目標歩数
 const GOAL = 3000;
 
 // 状態管理
 let state = {
-    children: [],           // 生徒一覧（名前、ID）
+    children: [],           // 児童一覧（名前、ID）
     selectedChildId: null,  // 選択した児童ID
     selectedDate: new Date(), // 選択した日付
     todayStats: null,       // 今日の集計情報
@@ -45,9 +41,9 @@ async function init() {
         renderStudentGrid();
     });
 
-    // データ読み込み（生徒一覧を先に取得）
+    // データ読み込み（児童一覧を先に取得）
     await loadChildren();
-    console.log('init: 初期化後、生徒数', state.children.length);
+    console.log('init: 初期化後、児童数', state.children.length);
     await loadTodayStats();
 
     // 最初に選択
@@ -60,10 +56,10 @@ async function init() {
     setTimeout(refreshData, 5000);
 }
 
-// ===== 生徒データ =====
+// ===== 児童データ =====
 
 async function loadChildren() {
-    console.log('loadChildren: 生徒一覧を取得開始...');
+    console.log('loadChildren: 児童一覧を取得開始...');
     try {
         const result = await apiGet('/api/children');
         console.log('loadChildren: API応答:', result);
@@ -76,7 +72,7 @@ async function loadChildren() {
             console.log('loadChildren: oldIds=', state.children.map(c => c.child_id));
             console.log('loadChildren: newIds=', newChildren.map(c => c.child_id));
 
-            // 常に生徒データを更新
+            // 常に児童データを更新
             state.children = newChildren;
             console.log('loadChildren: updated, total=' + state.children.length);
 
@@ -92,9 +88,9 @@ async function loadChildren() {
     }
 }
 
-// 生徒グリッドを強制的に再描画
+// 児童グリッドを強制的に再描画
 function forceRefreshStudentGrid() {
-    console.log('forceRefreshStudentGrid: 呼び出し', state.children.length, '人の生徒');
+    console.log('forceRefreshStudentGrid: 呼び出し', state.children.length, '人の児童');
     renderStudentGrid();
 }
 
@@ -179,13 +175,13 @@ async function updateMeetingCount() {
     }
 }
 
-// ===== 生徒グリッド描画 =====
+// ===== 児童グリッド描画 =====
 
 function renderStudentGrid() {
     const grid = document.getElementById('studentGrid');
 
     if (state.children.length === 0) {
-        grid.innerHTML = '<div class="loading">生徒データがありません</div>';
+        grid.innerHTML = '<div class="loading">児童データがありません</div>';
         return;
     }
 
@@ -243,7 +239,7 @@ function renderStudentGrid() {
     }).join('');
 }
 
-// ===== 生徒選択・モーダル =====
+// ===== 児童選択・モーダル =====
 
 async function selectChild(childId, skipModal = false) {
     // 既に選択されている場合は解除
