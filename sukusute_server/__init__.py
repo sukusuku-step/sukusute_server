@@ -158,7 +158,7 @@ async def api_create_debug_child(
 async def list_children(
     dbsession: database_models.SessionDep
 ) -> http_models.ChildrenListResponse:
-    """ 生徒一覧を取得 """
+    """ 児童一覧を取得 """
     children = (await dbsession.execute(
         sqlalchemy.select(database_models.Child)
         .order_by(database_models.Child.child_id)
@@ -182,17 +182,17 @@ async def list_children(
 @app.get("/api/children/{child_id:int}/steps", tags=["API"])
 async def get_child_steps(
     child_id: int,
+    dbsession: database_models.SessionDep,
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
-    dbsession: database_models.SessionDep = None
 ) -> http_models.ChildStepsResponse:
-    """ 特定生徒の歩数データを取得 """
+    """ 特定児童の歩数データを取得 """
     # 指定日の開始時刻
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
     end_date = datetime.datetime(year, month, day, 23, 59, 59)
 
-    # 生徒情報を取得
+    # 児童情報を取得
     child = (await dbsession.execute(
         sqlalchemy.select(database_models.Child)
         .where(database_models.Child.child_id == child_id)
@@ -201,7 +201,7 @@ async def get_child_steps(
     if not child:
         raise fastapi.exceptions.HTTPException(404, "No such child found.")
 
-    # 歩数データ（最新のレコードのみを取得）
+    # 歩数データ（最新のレコードのみ取得）
     latest_step_data = (await dbsession.execute(
         sqlalchemy.select(database_models.SingleChildData)
         .where(
@@ -216,16 +216,10 @@ async def get_child_steps(
     today_steps = latest_step_data.steps if latest_step_data else 0
 
     # 前日同日比較用（最新のレコードのみ）
-    prev_start = (
-        datetime.datetime(year, month, day - 1, 0, 0, 0)
-        if day > 1
-        else datetime.datetime(year, month, 1, 0, 0, 0)
-    )
-    prev_end = (
-        datetime.datetime(year, month, day - 1, 23, 59, 59)
-        if day > 1
-        else datetime.datetime(year, month, 1, 23, 59, 59)
-    )
+    today_datetime = datetime.datetime(year, month, day, 0, 0, 0)
+    prev_date = today_datetime - datetime.timedelta(days=1)
+    prev_start = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 0, 0, 0)
+    prev_end = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 23, 59, 59)
 
     prev_step_data = (await dbsession.execute(
         sqlalchemy.select(database_models.SingleChildData)
@@ -288,10 +282,10 @@ async def get_child_steps(
 @app.get("/api/children/{child_id:int}/steps/history", tags=["API"])
 async def get_child_steps_history(
     child_id: int,
+    dbsession: database_models.SessionDep,
     days: int = 7,
-    dbsession: database_models.SessionDep = None
 ) -> http_models.ChildStepsHistoryResponse:
-    """ 特定生徒の歩数履歴を取得 """
+    """ 特定児童の歩数履歴を取得 """
     today = datetime.datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -325,10 +319,10 @@ async def get_child_steps_history(
 
 @app.get("/api/stats/today", tags=["API"])
 async def get_today_stats(
+    dbsession: database_models.SessionDep,
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
-    dbsession: database_models.SessionDep = None
 ) -> http_models.TodayStatsResponse:
     """ 今日の集計情報を取得 """
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
@@ -338,7 +332,7 @@ async def get_today_stats(
         f"get_today_stats: year={year}, month={month}, day={day}"
     )
 
-    # 全生徒のその日の最新の歩数データ
+    # 全児童のその日の最新の歩数データ
     all_step_data = (await dbsession.execute(
         sqlalchemy.select(
             database_models.SingleChildData.child_id,
@@ -377,7 +371,7 @@ async def get_today_stats(
 
     total_steps = sum(student_steps.values())
 
-    # 生徒ID一覧を取得
+    # 児童ID一覧を取得
     all_children = (await dbsession.execute(
         sqlalchemy.select(database_models.Child)
     )).scalars().all()
@@ -394,16 +388,10 @@ async def get_today_stats(
     goal_met_count = sum(1 for s in student_steps.values() if s >= 10000)
 
     # 前日比較
-    prev_start = (
-        datetime.datetime(year, month, day - 1, 0, 0, 0)
-        if day > 1
-        else datetime.datetime(year, month, 1, 0, 0, 0)
-    )
-    prev_end = (
-        datetime.datetime(year, month, day - 1, 23, 59, 59)
-        if day > 1
-        else datetime.datetime(year, month, 1, 23, 59, 59)
-    )
+    today_datetime = datetime.datetime(year, month, day, 0, 0, 0)
+    prev_date = today_datetime - datetime.timedelta(days=1)
+    prev_start = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 0, 0, 0)
+    prev_end = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 23, 59, 59)
 
     prev_step_data = (await dbsession.execute(
         sqlalchemy.select(database_models.SingleChildData)
@@ -421,10 +409,10 @@ async def get_today_stats(
         else 0
     )
 
-    # 歩数が普段より少ない生徒を検出（警告）
+    # 歩数が普段より少ない児童を検出（警告）
     warnings = []
     for child_id_val, name, steps_val, date_val in list(all_step_data):
-        # この生徒の過去7日間の平均を計算
+        # この児童の過去7日間の平均を計算
         week_start = datetime.datetime.now().replace(
             hour=0, minute=0, second=0, microsecond=0
         ) - datetime.timedelta(days=7)
@@ -479,16 +467,16 @@ async def get_today_stats(
             http_models.StepsByHour(hour=h, steps=hour_steps)
         )
 
-    # 生徒別ランキング（データがない生徒も含める）
+    # 児童別ランキング（データがない児童も含める）
     student_ranking = []
     for child in all_children:
         steps = student_steps.get(child.child_id, 0)
-        student_ranking.append({
-            "child_id": child.child_id,
-            "name": child.name,
-            "steps": steps
-        })
-    student_ranking.sort(key=lambda x: x["steps"], reverse=True)
+        student_ranking.append(http_models.StudentRankingItem(
+            child_id=child.child_id,
+            name=child.name,
+            steps=steps
+        ))
+    student_ranking.sort(key=lambda x: x.steps, reverse=True)
 
     logger.info(f"get_today_stats: student_ranking={student_ranking}")
 
@@ -514,16 +502,16 @@ async def get_today_stats(
 @app.get("/api/children/{child_id:int}/distances", tags=["API"])
 async def get_child_distances(
     child_id: int,
+    dbsession: database_models.SessionDep,
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
-    dbsession: database_models.SessionDep = None
 ) -> http_models.ChildDistancesResponse:
-    """ 特定生徒の距離データを取得 """
+    """ 特定児童の距離データを取得 """
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
     end_date = datetime.datetime(year, month, day, 23, 59, 59)
 
-    # 生徒情報を取得
+    # 児童情報を取得
     child = (await dbsession.execute(
         sqlalchemy.select(database_models.Child)
         .where(database_models.Child.child_id == child_id)
@@ -605,10 +593,10 @@ async def get_child_distances(
 
 @app.get("/api/stats/distance-today", tags=["API"])
 async def get_distance_today_stats(
+    dbsession: database_models.SessionDep,
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
-    dbsession: database_models.SessionDep = None
 ) -> http_models.DistanceStatsResponse:
     """ 今日の距離データの集計情報を取得 """
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
@@ -659,7 +647,7 @@ async def get_distance_today_stats(
             "distance": record.distance
         }
 
-        # 各生徒の距離
+        # 各児童の距離
         if record.child_id_1 not in child_distances:
             child_distances[record.child_id_1] = {
                 "total": 0,
@@ -678,7 +666,7 @@ async def get_distance_today_stats(
         child_distances[record.child_id_2]["total"] += record.distance
         child_distances[record.child_id_2]["count"] += 1
 
-    # 生徒別統計
+    # 児童別統計
     student_stats = []
     for cid, data in child_distances.items():
         child = await dbsession.get(database_models.Child, cid)
@@ -717,9 +705,9 @@ async def get_distance_today_stats(
 
 @app.get("/api/stats/monthly", tags=["API"])
 async def get_monthly_stats(
+    dbsession: database_models.SessionDep,
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
-    dbsession: database_models.SessionDep = None
 ) -> http_models.MonthlyStatsResponse:
     """ 月間集計情報を取得 """
     import calendar

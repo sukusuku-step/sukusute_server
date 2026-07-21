@@ -51,14 +51,14 @@ class ChildDataResponse(Result):
 # ===== 児童一覧モデル =====
 
 class ChildListItem(pydantic.BaseModel):
-    """ 生徒一覧の項目 """
+    """ 児童一覧の項目 """
     child_id: int
     name: str
     device_id: uuid.UUID
 
 
 class ChildrenListResponse(Result):
-    """ 生徒一覧レスポンス """
+    """ 児童一覧レスポンス """
     children: list[ChildListItem]
 
 
@@ -77,7 +77,7 @@ class DailySteps(pydantic.BaseModel):
 
 
 class StepWarning(pydantic.BaseModel):
-    """ 歩数警告 - 普段の平均に対する歩数が少ない生徒 """
+    """ 歩数警告 - 普段の平均に対する歩数が少ない児童 """
     child_id: int
     name: str
     current_steps: int
@@ -86,7 +86,7 @@ class StepWarning(pydantic.BaseModel):
 
 
 class ChildStepsResponse(Result):
-    """ 特定生徒の歩数レスポンス """
+    """ 特定児童の歩数レスポンス """
     child_id: int
     name: str
     device_id: uuid.UUID
@@ -102,7 +102,7 @@ class ChildStepsResponse(Result):
 
 
 class ChildStepsHistoryResponse(Result):
-    """ 特定生徒の歩数履歴レスポンス """
+    """ 特定児童の歩数履歴レスポンス """
     child_id: int
     name: str
     history: list[DailySteps]
@@ -111,7 +111,7 @@ class ChildStepsHistoryResponse(Result):
 # ===== 距離データモデル =====
 
 class ChildDistance(pydantic.BaseModel):
-    """ 生徒の距離データ """
+    """ 児童の距離データ """
     with_child: int
     other_name: typing.Optional[str] = None
     distance: float
@@ -125,7 +125,7 @@ class DistanceStat(pydantic.BaseModel):
 
 
 class StudentDistanceStat(pydantic.BaseModel):
-    """ 生徒別距離統計 """
+    """ 児童別距離統計 """
     child_id: int
     name: str
     total_distance: float
@@ -143,7 +143,7 @@ class PairDistance(pydantic.BaseModel):
 
 
 class ChildDistancesResponse(Result):
-    """ 特定生徒の距離データレスポンス """
+    """ 特定児童の距離データレスポンス """
     child_id: int
     name: str
     device_id: uuid.UUID
@@ -168,6 +168,13 @@ class DistanceStatsResponse(Result):
 
 # ===== 集計情報モデル =====
 
+class StudentRankingItem(pydantic.BaseModel):
+    """ 児童ランキング項目 """
+    child_id: int
+    name: str
+    steps: int
+
+
 class TodayStatsResponse(Result):
     """ 今日の集計情報レスポンス """
     date: datetime.datetime
@@ -180,7 +187,7 @@ class TodayStatsResponse(Result):
     step_change: int
     step_change_percent: float
     steps_by_hour: list[StepsByHour]
-    student_ranking: list[typing.Dict[str, typing.Any]]
+    student_ranking: list[StudentRankingItem]
     warnings: list[StepWarning]
 
 
