@@ -19,13 +19,13 @@ class Result(pydantic.BaseModel):
 
 class ChildSingleData(pydantic.BaseModel):
     """ 単独の児童についてのデータ（歩数など） """
-    date: datetime.datetime
+    date: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
     steps: int
 
 
 class ChildDistanceData(pydantic.BaseModel):
     """ 児童の距離データ """
-    date: datetime.datetime
+    date: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
     with_child: int
     distance: float
 
