@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>すくすくステップ - 歩数 tracking ダッシュボード</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ヘッダー -->
+    <div class="header">
+        <h1>🏃 すくすくステップ</h1>
+        <div class="header-controls">
+            <!-- リアルタイム更新インジケーター -->
+            <div class="live-indicator">
+                <span class="live-dot"></span>
+                <span>リアルタイム更新中</span>
+            </div>
+            <!-- 日付セレクター -->
+            <input type="date" id="dateSelector" class="date-selector">
+            <!-- ソートモード選択 -->
+            <select id="sortOrder" class="sort-select">
+                <option value="steps">歩数順</option>
+                <option value="name">名前順</option>
+                <option value="rank">ID順</option>
+            </select>
+            <!-- 最終更新時刻 -->
+            <span>最終更新: <span id="lastUpdate">-</span></span>
+        </div>
+    </div>
+
+    <!-- 統計カード -->
+    <div class="stats-grid">
+        <!-- 総歩数 -->
+        <div class="stat-card">
+            <div class="label">総歩数</div>
+            <div class="value" id="totalSteps">-</div>
+            <div class="sub" id="stepChangeSub"></div>
+        </div>
+        <!-- 平均歩数 -->
+        <div class="stat-card">
+            <div class="label">平均歩数</div>
+            <div class="value" id="avgSteps">-</div>
+            <div class="sub">目標: 3,000歩</div>
+        </div>
+        <!-- 登録生徒数 -->
+        <div class="stat-card">
+            <div class="label">登録生徒</div>
+            <div class="value" id="totalStudents">-</div>
+            <div class="sub"></div>
+        </div>
+        <!-- 目標達成者 -->
+        <div class="stat-card">
+            <div class="label">目標達成者</div>
+            <div class="value" id="goalMetCount">-<span class="unit">人</span></div>
+            <div class="sub" id="goalMetPercent">/ -人</div>
+        </div>
+        <!-- 交流回数 -->
+        <div class="stat-card">
+            <div class="label">交流回数</div>
+            <div class="value" id="meetingCount">-</div>
+            <div class="sub">ペア別交流</div>
+        </div>
+    </div>
+
+    <!-- メインコンテンツ -->
+    <div class="main-content">
+        <!-- 左カラム: 生徒カード -->
+        <div>
+            <div class="student-grid" id="studentGrid">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <span>生徒データを読み込み中...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右カラム: ランキング・警告 -->
+        <div>
+            <!-- 歩数ランキング -->
+            <div class="sidebar-card">
+                <h2>🏆 ランキング（上位10名）</h2>
+                <div id="rankingList">
+                    <div class="loading">読み込み中...</div>
+                </div>
+            </div>
+
+            <!-- 歩数警告 -->
+            <div class="sidebar-card">
+                <h2>⚠️ 歩数警告</h2>
+                <div id="warningsList">
+                    <div style="color: #8898aa; font-size: 12px;">異常なし</div>
+                </div>
+            </div>
+
+            <!-- 距離トップペア -->
+            <div class="sidebar-card">
+                <h2>🔗 トップペア（距離）</h2>
+                <div id="topPairsList">
+                    <div style="color: #8898aa; font-size: 12px;">データ受信待ち...</div>
+                </div>
+            </div>
+
+            <!-- データログ -->
+            <div class="sidebar-card">
+                <h2>📊 データログ</h2>
+                <div id="dataLog">
+                    <div style="color: #8898aa; font-size: 12px;">データ受信待ち...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 生徒詳細モーダル -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title" id="modalTitle">生徒詳細</span>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div id="modalContent">
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
