@@ -4,6 +4,7 @@ import logging
 import uuid
 import datetime
 import math
+import pathlib
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.frontend("/", directory=(pathlib.Path(__file__).parent.parent / "frontend").resolve())
 
 # ===== ヘルスチェック =====
 
