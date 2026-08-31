@@ -1,6 +1,3 @@
-// APIベースURL設定
-const API_BASE = 'http://192.168.11.2:8000';
-
 // 目標歩数
 const GOAL = 3000;
 
@@ -19,7 +16,7 @@ let state = {
 
 async function apiGet(url) {
     try {
-        const response = await fetch(`${API_BASE}${url}`);
+        const response = await fetch(`${url}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return await response.json();
     } catch (error) {
