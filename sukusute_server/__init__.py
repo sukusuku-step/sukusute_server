@@ -686,19 +686,16 @@ async def get_distance_today_stats(
     student_stats = []
     for cid, data in child_distances.items():
         child = await dbsession.get(database_models.Child, cid)
-        total = typing.cast(float, data["total"])
-        count = typing.cast(int, data["count"])
-        name = typing.cast(str, data["name"])
         student_stats.append(http_models.StudentDistanceStat(
             child_id=cid,
-            name=name,
-            total_distance=total,
+            name=data["name"],
+            total_distance=data["total"],
             avg_distance=(
-                total / count
-                if count > 0
+                data["total"] / data["count"]
+                if data["count"] > 0
                 else 0
             ),
-            meeting_count=count
+            meeting_count=data["count"]
         ))
 
     student_stats.sort(key=lambda x: x.total_distance, reverse=True)
