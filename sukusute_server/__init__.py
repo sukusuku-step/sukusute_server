@@ -5,6 +5,7 @@ import uuid
 import datetime
 import math
 import pathlib
+import typing
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,11 @@ import sqlalchemy.orm
 from sqlalchemy import or_
 
 from sukusute_server import http_models, database_models
+
+class _ChildDistanceAgg(typing.TypedDict):
+    total: float
+    count: int
+    name: str
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +59,13 @@ async def push_data(
     # 対象児童を取得
     target_child = await dbsession.get(database_models.Child, data.child_id)
     if not target_child:
-        raise fastapi.HTTPException(404, f"Child {data.child_id} not found")
+        #raise fastapi.HTTPException(404, f"Child {data.child_id} not found")
+        target_child = database_models.Child(
+            child_id = data.child_id,
+            name = data.child_id,
+            device_id = uuid.uuid4()
+        )
+        dbsession.add(target_child)
 
     # 距離データを処理
     if data.distances:
@@ -94,7 +106,7 @@ async def push_data(
 
 @app.get("/api/children/{child_id:int}", tags=["API"])
 async def child_info(
-    child_id: int,
+    child_id: str,
     dbsession: database_models.SessionDep
 ) -> http_models.ChildDataResponse:
     """ 児童のすべての情報（歩数・距離データを含む）を取得 """
@@ -148,6 +160,7 @@ async def api_create_debug_child(
 ) -> http_models.Result:
     """ デバッグ用：児童を作成 """
     child = database_models.Child(
+            child_id=f"Test_{str(uuid.uuid4())[:7]}",
         name="Test Child",
         device_id=uuid.uuid4()
     )
@@ -183,7 +196,7 @@ async def list_children(
 
 @app.get("/api/children/{child_id:int}/steps", tags=["API"])
 async def get_child_steps(
-    child_id: int,
+    child_id: str,
     dbsession: database_models.SessionDep,
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
@@ -283,7 +296,7 @@ async def get_child_steps(
 
 @app.get("/api/children/{child_id:int}/steps/history", tags=["API"])
 async def get_child_steps_history(
-    child_id: int,
+    child_id: str,
     dbsession: database_models.SessionDep,
     days: int = 7,
 ) -> http_models.ChildStepsHistoryResponse:
@@ -309,10 +322,11 @@ async def get_child_steps_history(
             steps=step_data.steps if step_data else 0
         ))
 
+    child = await dbsession.get(database_models.Child, child_id)
     return http_models.ChildStepsHistoryResponse(
         status="ok",
         child_id=child_id,
-        name=(await dbsession.get(database_models.Child, child_id)).name,
+        name=child.name if child else "",
         history=steps_history
     )
 
@@ -503,7 +517,7 @@ async def get_today_stats(
 
 @app.get("/api/children/{child_id:int}/distances", tags=["API"])
 async def get_child_distances(
-    child_id: int,
+    child_id: str,
     dbsession: database_models.SessionDep,
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
@@ -582,11 +596,11 @@ async def get_child_distances(
         total_distance=total_distance,
         avg_distance=avg_distance,
         max_distance=http_models.DistanceStat(
-            with_child=max_distance_record.with_child if max_distance_record else 0,
+            with_child=max_distance_record.with_child if max_distance_record else "",
             distance=max_distance_record.distance if max_distance_record else 0
         ),
         min_distance=http_models.DistanceStat(
-            with_child=min_distance_record.with_child if min_distance_record else 0,
+            with_child=min_distance_record.with_child if min_distance_record else "",
             distance=min_distance_record.distance if min_distance_record else 0
         ),
         meeting_count=len(distances)
@@ -627,13 +641,13 @@ async def get_distance_today_stats(
     )).all()
 
     # 距離データを集計
-    total_distance = 0
+    total_distance = 0.0
     meeting_count = 0
     distance_by_pair = {}
-    child_distances = {}
+    child_distances: dict[str, _ChildDistanceAgg] = {}
 
     for record, name1, name2 in distance_records:
-        total_distance += record.distance
+        total_distance += float(record.distance)
         meeting_count += 1
 
         pair_key = (record.child_id_1, record.child_id_2)
@@ -646,26 +660,26 @@ async def get_distance_today_stats(
             "child_id_2": record.child_id_2,
             "name1": pair_names[0],
             "name2": pair_names[1],
-            "distance": record.distance
+            "distance": float(record.distance)
         }
 
         # 各児童の距離
         if record.child_id_1 not in child_distances:
             child_distances[record.child_id_1] = {
-                "total": 0,
+                "total": 0.0,
                 "count": 0,
                 "name": name1 or f"Child{record.child_id_1}"
             }
-        child_distances[record.child_id_1]["total"] += record.distance
+        child_distances[record.child_id_1]["total"] += float(record.distance)
         child_distances[record.child_id_1]["count"] += 1
 
         if record.child_id_2 not in child_distances:
             child_distances[record.child_id_2] = {
-                "total": 0,
+                "total": 0.0,
                 "count": 0,
                 "name": name2 or f"Child{record.child_id_2}"
             }
-        child_distances[record.child_id_2]["total"] += record.distance
+        child_distances[record.child_id_2]["total"] += float(record.distance)
         child_distances[record.child_id_2]["count"] += 1
 
     # 児童別統計
@@ -697,11 +711,20 @@ async def get_distance_today_stats(
             else 0
         ),
         student_stats=student_stats,
-        top_pairs=sorted(
-            distance_by_pair.values(),
-            key=lambda x: x["distance"],
-            reverse=True
-        )[:5]
+        top_pairs=[
+            http_models.PairDistance(
+                child_id_1=p["child_id_1"],
+                child_id_2=p["child_id_2"],
+                name1=p["name1"],
+                name2=p["name2"],
+                distance=p["distance"],
+            )
+            for p in sorted(
+                distance_by_pair.values(),
+                key=lambda x: x["distance"],
+                reverse=True
+            )[:5]
+        ]
     )
 
 
