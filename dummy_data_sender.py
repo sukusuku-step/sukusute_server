@@ -16,26 +16,26 @@ import uuid
 # 各デバイスに固有のID、名前、送信間隔、位置情報、データタイプを設定
 
 DEVICE_CONFIGS = [
-    {"device_id": "1",  "name": "デバイス-001", "interval": 5,  "data_type": "both",    "base_lat": 35.6812, "base_lon": 139.7671, "zone": "東京・丸の内"},
-    {"device_id": "2",  "name": "デバイス-002", "interval": 7,  "data_type": "steps",   "base_lat": 35.6850, "base_lon": 139.7700, "zone": "東京・竹橋"},
-    {"device_id": "3",  "name": "デバイス-003", "interval": 10, "data_type": "distance","base_lat": 35.6890, "base_lon": 139.6917, "zone": "東京・新宿"},
-    {"device_id": "4",  "name": "デバイス-004", "interval": 4,  "data_type": "both",    "base_lat": 35.6580, "base_lon": 139.7414, "zone": "東京・渋谷"},
-    {"device_id": "5",  "name": "デバイス-005", "interval": 12, "data_type": "steps",   "base_lat": 35.6762, "base_lon": 139.6503, "zone": "東京・池袋"},
-    {"device_id": "6",  "name": "デバイス-006", "interval": 6,  "data_type": "distance","base_lat": 35.7100, "base_lon": 139.8107, "zone": "東京・上野"},
-    {"device_id": "7",  "name": "デバイス-007", "interval": 8,  "data_type": "both",    "base_lat": 35.6640, "base_lon": 139.7350, "zone": "東京・新橋"},
-    {"device_id": "8",  "name": "デバイス-008", "interval": 15, "data_type": "steps",   "base_lat": 35.6930, "base_lon": 139.7036, "zone": "東京・四ツ谷"},
-    {"device_id": "9",  "name": "デバイス-009", "interval": 5,  "data_type": "distance","base_lat": 35.6720, "base_lon": 139.7650, "zone": "東京・銀座"},
-    {"device_id": "10", "name": "デバイス-010", "interval": 9,  "data_type": "both",    "base_lat": 35.6860, "base_lon": 139.6940, "zone": "東京・中野"},
-    {"device_id": "11", "name": "デバイス-011", "interval": 11, "data_type": "steps",   "base_lat": 35.6780, "base_lon": 139.7340, "zone": "東京・恵比寿"},
-    {"device_id": "12", "name": "デバイス-012", "interval": 6,  "data_type": "distance","base_lat": 35.6980, "base_lon": 139.7730, "zone": "東京・秋葉原"},
-    {"device_id": "13", "name": "デバイス-013", "interval": 13, "data_type": "both",    "base_lat": 35.6690, "base_lon": 139.7080, "zone": "東京・代々木"},
-    {"device_id": "14", "name": "デバイス-014", "interval": 7,  "data_type": "steps",   "base_lat": 35.6830, "base_lon": 139.7550, "zone": "東京・神田"},
-    {"device_id": "15", "name": "デバイス-015", "interval": 10, "data_type": "distance","base_lat": 35.6750, "base_lon": 139.7250, "zone": "東京・飯田橋"},
-    {"device_id": "16", "name": "デバイス-016", "interval": 4,  "data_type": "both",    "base_lat": 35.6910, "base_lon": 139.7800, "zone": "東京・日本橋"},
-    {"device_id": "17", "name": "デバイス-017", "interval": 14, "data_type": "steps",   "base_lat": 35.6670, "base_lon": 139.7400, "zone": "東京・品川"},
-    {"device_id": "18", "name": "デバイス-018", "interval": 8,  "data_type": "distance","base_lat": 35.6840, "base_lon": 139.7620, "zone": "東京・有楽町"},
-    {"device_id": "19", "name": "デバイス-019", "interval": 5,  "data_type": "both",    "base_lat": 35.6950, "base_lon": 139.6980, "zone": "東京・立川"},
-    {"device_id": "20", "name": "デバイス-020", "interval": 11, "data_type": "steps",   "base_lat": 35.6730, "base_lon": 139.7180, "zone": "東京・調布"},
+    {"device_id": 1,  "name": "デバイス-001", "interval": 5,  "data_type": "both",    "base_lat": 35.6812, "base_lon": 139.7671, "zone": "東京・丸の内"},
+    {"device_id": 2,  "name": "デバイス-002", "interval": 7,  "data_type": "steps",   "base_lat": 35.6850, "base_lon": 139.7700, "zone": "東京・竹橋"},
+    {"device_id": 3,  "name": "デバイス-003", "interval": 10, "data_type": "distance","base_lat": 35.6890, "base_lon": 139.6917, "zone": "東京・新宿"},
+    {"device_id": 4,  "name": "デバイス-004", "interval": 4,  "data_type": "both",    "base_lat": 35.6580, "base_lon": 139.7414, "zone": "東京・渋谷"},
+    {"device_id": 5,  "name": "デバイス-005", "interval": 12, "data_type": "steps",   "base_lat": 35.6762, "base_lon": 139.6503, "zone": "東京・池袋"},
+    {"device_id": 6,  "name": "デバイス-006", "interval": 6,  "data_type": "distance","base_lat": 35.7100, "base_lon": 139.8107, "zone": "東京・上野"},
+    {"device_id": 7,  "name": "デバイス-007", "interval": 8,  "data_type": "both",    "base_lat": 35.6640, "base_lon": 139.7350, "zone": "東京・新橋"},
+    {"device_id": 8,  "name": "デバイス-008", "interval": 15, "data_type": "steps",   "base_lat": 35.6930, "base_lon": 139.7036, "zone": "東京・四ツ谷"},
+    {"device_id": 9,  "name": "デバイス-009", "interval": 5,  "data_type": "distance","base_lat": 35.6720, "base_lon": 139.7650, "zone": "東京・銀座"},
+    {"device_id": 10, "name": "デバイス-010", "interval": 9,  "data_type": "both",    "base_lat": 35.6860, "base_lon": 139.6940, "zone": "東京・中野"},
+    {"device_id": 11, "name": "デバイス-011", "interval": 11, "data_type": "steps",   "base_lat": 35.6780, "base_lon": 139.7340, "zone": "東京・恵比寿"},
+    {"device_id": 12, "name": "デバイス-012", "interval": 6,  "data_type": "distance","base_lat": 35.6980, "base_lon": 139.7730, "zone": "東京・秋葉原"},
+    {"device_id": 13, "name": "デバイス-013", "interval": 13, "data_type": "both",    "base_lat": 35.6690, "base_lon": 139.7080, "zone": "東京・代々木"},
+    {"device_id": 14, "name": "デバイス-014", "interval": 7,  "data_type": "steps",   "base_lat": 35.6830, "base_lon": 139.7550, "zone": "東京・神田"},
+    {"device_id": 15, "name": "デバイス-015", "interval": 10, "data_type": "distance","base_lat": 35.6750, "base_lon": 139.7250, "zone": "東京・飯田橋"},
+    {"device_id": 16, "name": "デバイス-016", "interval": 4,  "data_type": "both",    "base_lat": 35.6910, "base_lon": 139.7800, "zone": "東京・日本橋"},
+    {"device_id": 17, "name": "デバイス-017", "interval": 14, "data_type": "steps",   "base_lat": 35.6670, "base_lon": 139.7400, "zone": "東京・品川"},
+    {"device_id": 18, "name": "デバイス-018", "interval": 8,  "data_type": "distance","base_lat": 35.6840, "base_lon": 139.7620, "zone": "東京・有楽町"},
+    {"device_id": 19, "name": "デバイス-019", "interval": 5,  "data_type": "both",    "base_lat": 35.6950, "base_lon": 139.6980, "zone": "東京・立川"},
+    {"device_id": 20, "name": "デバイス-020", "interval": 11, "data_type": "steps",   "base_lat": 35.6730, "base_lon": 139.7180, "zone": "東京・調布"},
 ]
 
 
@@ -60,7 +60,7 @@ class DeviceState:
         self.base_lat: float = config["base_lat"]
         self.base_lon: float = config["base_lon"]
         self.zone: str = config["zone"]
-        self.child_id: str = config["device_id"]  # device_idとchild_idを連動
+        self.child_id: int = config["device_id"]  # device_idとchild_idを連動
         self.steps: int = 0  # 累積歩数
         self.battery: int = random.randint(60, 100)  # バッテリー残量
         self.last_lat: float = config["base_lat"]
@@ -132,7 +132,7 @@ def generate_realistic_steps(device: DeviceState, cycle_count: int) -> int:
     return max(1, base_increment + cycle_bonus)
 
 
-def generate_realistic_distance(child_id_1: str, child_id_2: str, device1: DeviceState, device2: DeviceState) -> dict:
+def generate_realistic_distance(child_id_1: int, child_id_2: int, device1: DeviceState, device2: DeviceState) -> dict:
     """
     2児童間の現実的な距離を生成（2-60mの範囲）
     
@@ -172,7 +172,7 @@ def send_device_data(
     
     バックエンドが受け付ける形式:
     {
-        "child_id": str,
+        "child_id": int,
         "singledata": {"date": str, "steps": int},  # optional
         "distances": [{"date": str, "with_child": int, "distance": float}]  # optional
     }
@@ -254,7 +254,7 @@ def send_device_data(
         return False
 
 
-def create_debug_children(base_url: str = "http://localhost:8000", count: int = 20) -> list[str]:
+def create_debug_children(base_url: str = "http://localhost:8000", count: int = 20) -> list[int]:
     """
     デバッグ用児童を複数作成
     
@@ -293,9 +293,6 @@ def create_debug_children(base_url: str = "http://localhost:8000", count: int = 
     return []
 
 
-def create_debug_children(base_url: str = "http://localhost:8000", count: int = 20) -> list[str]:
-    return ["Test A", "Test B", "Test C", "Test D", "Test E", "Test F", "Test G", "Test H", "Test I", "Test J", "Test K", "Test L", "Test M", "Test N", "Test O", "Test P", "Test Q", "Test R", "Test S", "Test T"]
-
 def sync_child_ids(devices: list[DeviceState], base_url: str = "http://localhost:8000") -> bool:
     """
     デバイスIDとサーバー上の児童IDを同期
@@ -307,9 +304,56 @@ def sync_child_ids(devices: list[DeviceState], base_url: str = "http://localhost
     Returns:
         同期成功時はTrue
     """
-    for device in devices:
-        device.child_id = f"Test {str(uuid.uuid4())[:7]}"
-    return True
+    import requests
+    
+    max_retries = 5
+    for retry in range(max_retries):
+        try:
+            list_url = f"{base_url}/api/children"
+            response = requests.get(list_url, timeout=5)
+            
+            if not response.ok:
+                time.sleep(1)
+                continue
+            
+            data = response.json()
+            children = data.get("children", [])
+            
+            # 児童数がデバイス数より少ない場合は作成
+            if len(children) < len(devices):
+                missing = len(devices) - len(children)
+                print(f"📋 児童数が不足しています。{missing}人作成します...")
+                created_ids = create_debug_children(base_url, missing)
+                if not created_ids:
+                    time.sleep(1)
+                    continue
+                # 再度取得
+                time.sleep(1)
+                response = requests.get(list_url, timeout=5)
+                if response.ok:
+                    children = response.json().get("children", [])
+                else:
+                    continue
+            
+            if len(children) >= len(devices):
+                # 児童IDをデバイスに割り当て
+                for i, device in enumerate(devices):
+                    device.child_id = children[i]["child_id"]
+                
+                print(f"✅ {len(children)}人の児童IDをデバイスに割り当てました")
+                return True
+            
+        except requests.exceptions.RequestException as e:
+            if retry < max_retries - 1:
+                print(f"  ⚠ 接続再試行中... ({retry+1}/{max_retries})")
+                time.sleep(2)
+            else:
+                print(f"❌ 児童IDの同期に失敗: {e}")
+                return False
+    
+    print("❌ 児童IDの同期に失敗しました。最大再試行回数を超えました。")
+    return False
+
 
 def run_device_simulation(
     devices: list[DeviceState],
