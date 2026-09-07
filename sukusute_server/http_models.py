@@ -48,6 +48,12 @@ class ChildDataResponse(Result):
     distancedata: list[ChildDistanceData]
 
 
+class ChildSearchResponse(Result):
+    """ 児童名から検索した結果を含むレスポンス """
+    child_id: int
+    name: str
+
+
 # ===== 児童一覧モデル =====
 
 class ChildListItem(pydantic.BaseModel):

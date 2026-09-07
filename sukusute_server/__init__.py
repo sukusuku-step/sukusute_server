@@ -92,6 +92,31 @@ async def push_data(
 
 # ===== 児童情報取得 =====
 
+@app.get("/api/children/search", tags=["API"])
+async def search_child_by_name(
+    name: str,
+    dbsession: database_models.SessionDep
+) -> http_models.ChildSearchResponse:
+    """ 児童名からchild_idを検索 """
+    child = (await dbsession.execute(
+        sqlalchemy.select(database_models.Child)
+        .where(database_models.Child.name == name)
+    )).scalar()
+
+    if not child:
+        child = database_models.Child(name=name, device_id=uuid.uuid4())
+        dbsession.add(child)
+        await dbsession.flush()
+
+    res = http_models.ChildSearchResponse(
+        status="ok",
+        child_id=child.child_id,
+        name=child.name
+    )
+    await dbsession.commit()
+    return res
+
+
 @app.get("/api/children/{child_id:int}", tags=["API"])
 async def child_info(
     child_id: int,
