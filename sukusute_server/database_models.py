@@ -42,7 +42,7 @@ class Child(Base):
     """ 児童情報を管理するテーブル """
     __tablename__ = "child"
 
-    child_id: Mapped[str] = mapped_column(primary_key=True)
+    child_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str]
     device_id: Mapped[uuid.UUID]
 
@@ -84,7 +84,7 @@ class SingleChildData(Base):
     """ 子ども（単独）のデータを蓄積する（歩数など） """
     __tablename__ = "child_data"
 
-    child_id: Mapped[str] = mapped_column(
+    child_id: Mapped[int] = mapped_column(
         ForeignKey("child.child_id"),
         primary_key=True
     )
@@ -106,11 +106,11 @@ class ChildDistanceData(Base):
         CheckConstraint("child_id_1 < child_id_2", name="child_id_order"),
     )
 
-    child_id_1: Mapped[str] = mapped_column(
+    child_id_1: Mapped[int] = mapped_column(
         ForeignKey("child.child_id"),
         primary_key=True
     )
-    child_id_2: Mapped[str] = mapped_column(
+    child_id_2: Mapped[int] = mapped_column(
         ForeignKey("child.child_id"),
         primary_key=True
     )
@@ -121,7 +121,7 @@ class ChildDistanceData(Base):
     child_2: Mapped[Child] = relationship(foreign_keys=child_id_2)
 
     @hybrid_property
-    def children(self) -> tuple[Child, Child]:
+    def children(self) -> tuple[Child]:
         """ 両児童のタプルを返す """
         return (self.child_1, self.child_2)
 
@@ -133,7 +133,7 @@ class ChildDistanceData(Base):
 
     @children.inplace.expression
     @classmethod
-    def _radius_expression(cls) -> SQLColumnExpression[tuple[Child, Child]]:
+    def _radius_expression(cls) -> SQLColumnExpression[tuple[Child]]:
         return select(Child) \
             .where(or_(
                 Child.child_id == cls.child_1,

@@ -26,13 +26,13 @@ class ChildSingleData(pydantic.BaseModel):
 class ChildDistanceData(pydantic.BaseModel):
     """ 児童の距離データ """
     date: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
-    with_child: str
+    with_child: int
     distance: float
 
 
 class ChildDataRecord(pydantic.BaseModel):
     """ デバイスからの受信データ """
-    child_id: str
+    child_id: int
     singledata: typing.Optional[ChildSingleData] = None
     distances: typing.Optional[list[ChildDistanceData]] = None
 
@@ -41,18 +41,24 @@ class ChildDataRecord(pydantic.BaseModel):
 
 class ChildDataResponse(Result):
     """ 児童のすべての情報を含むレスポンス """
-    child_id: str
+    child_id: int
     name: str
     device_id: uuid.UUID
     singledata: list[ChildSingleData]
     distancedata: list[ChildDistanceData]
 
 
+class ChildSearchResponse(Result):
+    """ 児童名から検索した結果を含むレスポンス """
+    child_id: int
+    name: str
+
+
 # ===== 児童一覧モデル =====
 
 class ChildListItem(pydantic.BaseModel):
     """ 児童一覧の項目 """
-    child_id: str
+    child_id: int
     name: str
     device_id: uuid.UUID
 
@@ -78,7 +84,7 @@ class DailySteps(pydantic.BaseModel):
 
 class StepWarning(pydantic.BaseModel):
     """ 歩数警告 - 普段の平均に対する歩数が少ない児童 """
-    child_id: str
+    child_id: int
     name: str
     current_steps: int
     average_steps: int
@@ -87,7 +93,7 @@ class StepWarning(pydantic.BaseModel):
 
 class ChildStepsResponse(Result):
     """ 特定児童の歩数レスポンス """
-    child_id: str
+    child_id: int
     name: str
     device_id: uuid.UUID
     date: datetime.datetime
@@ -103,7 +109,7 @@ class ChildStepsResponse(Result):
 
 class ChildStepsHistoryResponse(Result):
     """ 特定児童の歩数履歴レスポンス """
-    child_id: str
+    child_id: int
     name: str
     history: list[DailySteps]
 
@@ -112,7 +118,7 @@ class ChildStepsHistoryResponse(Result):
 
 class ChildDistance(pydantic.BaseModel):
     """ 児童の距離データ """
-    with_child: str
+    with_child: int
     other_name: typing.Optional[str] = None
     distance: float
     date: datetime.datetime
@@ -120,13 +126,13 @@ class ChildDistance(pydantic.BaseModel):
 
 class DistanceStat(pydantic.BaseModel):
     """ 距離統計（最大/最小） """
-    with_child: str
+    with_child: int
     distance: float
 
 
 class StudentDistanceStat(pydantic.BaseModel):
     """ 児童別距離統計 """
-    child_id: str
+    child_id: int
     name: str
     total_distance: float
     avg_distance: float
@@ -135,8 +141,8 @@ class StudentDistanceStat(pydantic.BaseModel):
 
 class PairDistance(pydantic.BaseModel):
     """ ペア別距離 """
-    child_id_1: str
-    child_id_2: str
+    child_id_1: int
+    child_id_2: int
     name1: str
     name2: str
     distance: float
@@ -144,7 +150,7 @@ class PairDistance(pydantic.BaseModel):
 
 class ChildDistancesResponse(Result):
     """ 特定児童の距離データレスポンス """
-    child_id: str
+    child_id: int
     name: str
     device_id: uuid.UUID
     date: datetime.datetime
@@ -170,7 +176,7 @@ class DistanceStatsResponse(Result):
 
 class StudentRankingItem(pydantic.BaseModel):
     """ 児童ランキング項目 """
-    child_id: str
+    child_id: int
     name: str
     steps: int
 
