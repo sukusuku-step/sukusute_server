@@ -103,8 +103,10 @@ uv run alembic revision --autogenerate -m "変更内容"
 初回セットアップ用の教師アカウント作成APIです。教師が1件でも登録済みの場合は `409` を返します。パスワードはサーバー内でソルト付きPBKDF2ハッシュとして保存し、8文字以上を必須とします。
 
 ```json
-{"name": "山田先生", "username": "yamada", "password": "password123"}
+{"username": "yamada", "password": "password123"}
 ```
+
+ユーザー名とパスワードはSQLiteの `teacher` テーブルに保存されます。サーバーを再起動した後も、同じ認証情報でログインできます。
 
 #### `POST /api/auth/login`
 

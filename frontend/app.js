@@ -162,7 +162,6 @@ document.getElementById('registerForm').addEventListener('submit', async (event)
     event.preventDefault();
     try {
         await apiRequest('/api/auth/register', { method: 'POST', body: JSON.stringify({
-            name: document.getElementById('registerName').value,
             username: document.getElementById('registerUsername').value,
             password: document.getElementById('registerPassword').value
         }) });

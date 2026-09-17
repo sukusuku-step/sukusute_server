@@ -91,7 +91,7 @@ async def register_teacher(
     dbsession.add(database_models.Teacher(
         username=data.username.strip(),
         pw_hash=hash_password(data.password),
-        name=data.name.strip() or data.username.strip(),
+        name=data.username.strip(),
     ))
     await dbsession.commit()
     return http_models.Result(status="ok", msg="アカウントを作成しました")

@@ -21,7 +21,7 @@ class LoginRequest(pydantic.BaseModel):
 
 
 class RegisterRequest(LoginRequest):
-    name: str
+    pass
 
 
 class LoginResponse(Result):
