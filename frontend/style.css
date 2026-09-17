@@ -296,6 +296,17 @@ body {
     font-weight: 700;
 }
 
+.danger-button {
+    min-height: 36px;
+    border: 1px solid #8d2525;
+    border-radius: 4px;
+    background: #8d2525;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+}
+
 .text-button {
     border: 0;
     background: transparent;
@@ -430,6 +441,26 @@ body {
 .modal-caption {
     margin-top: -10px;
     font-size: 12px;
+}
+
+.delete-form {
+    display: grid;
+    gap: 12px;
+}
+
+.delete-form label {
+    display: grid;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.delete-form input {
+    height: 36px;
+    padding: 6px 9px;
+    border: 1px solid #a78485;
+    border-radius: 4px;
+    font: inherit;
 }
 
 .relation-graph {
