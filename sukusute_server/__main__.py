@@ -1,12 +1,15 @@
 """ HTTPサーバの起動 (バックエンド + フロントエンド) """
 
-def run_backend(port: int = 8000):
+import os
+
+
+def run_backend(host: str = "0.0.0.0", port: int = 8000):
     """サーバを起動"""
     try:
         import uvicorn
         import sukusute_server
-        print(f"サーバを起動中... http://localhost:{port}")
-        uvicorn.run(sukusute_server.app, host="0.0.0.0", port=port)
+        print(f"サーバを起動中... http://{host}:{port}")
+        uvicorn.run(sukusute_server.app, host=host, port=port)
     except ImportError as e:
         print(f"起動エラー: 依存関係がインストールされていません - {e}")
         print("pyproject.tomlの依存関係をインストールしてください:")
@@ -15,7 +18,9 @@ def run_backend(port: int = 8000):
         print(f"エラー: {e}")
 
 def main():
-    run_backend(8000)
+    host = os.getenv("SUKUSUTE_HOST", "0.0.0.0")
+    port = int(os.getenv("SUKUSUTE_PORT", "8000"))
+    run_backend(host, port)
 
 if __name__ == "__main__":
     main()

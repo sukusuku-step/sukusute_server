@@ -15,7 +15,35 @@ uv run alembic upgrade head
 uv run python -m sukusute_server
 ```
 
-バックエンドは `http://localhost:8000` で起動します。APIドキュメントは [http://localhost:8000/docs](http://localhost:8000/docs)、ReDocは [http://localhost:8000/redoc](http://localhost:8000/redoc) で確認できます。`frontend/` の画面も同じアプリから配信されるため、[http://localhost:8000/](http://localhost:8000/) を開いてください。
+デフォルトでは全ネットワークインターフェースの8000番ポート（`0.0.0.0:8000`）で待ち受けます。ローカルでは `http://localhost:8000`、VPSでは `http://49.212.151.94:8000` を開いてください。APIドキュメントはそれぞれのURLに `/docs` を付けて確認できます。`frontend/` の画面も同じアプリから配信されます。
+
+### VPSでの起動
+
+VPS上で次を実行します。
+
+```sh
+uv sync
+uv run alembic upgrade head
+uv run python -m sukusute_server
+```
+
+外部から接続できない場合は、VPSのファイアウォールでも8000番ポートを許可してください。`ufw` を使う環境では次のように設定します。
+
+```sh
+sudo ufw allow 8000/tcp
+```
+
+起動後のアクセス先:
+
+- アプリ: `http://49.212.151.94:8000/`
+- APIドキュメント: `http://49.212.151.94:8000/docs`
+- ヘルスチェック: `http://49.212.151.94:8000/api/health`
+
+ホスト名やポートを変更する場合は、環境変数を指定できます。
+
+```sh
+SUKUSUTE_HOST=0.0.0.0 SUKUSUTE_PORT=8000 uv run python -m sukusute_server
+```
 
 ### マイグレーション
 
@@ -33,7 +61,8 @@ uv run alembic revision --autogenerate -m "変更内容"
 
 ## API共通仕様
 
-- ベースURL: `http://localhost:8000`
+- ベースURL（ローカル）: `http://localhost:8000`
+- ベースURL（VPS）: `http://49.212.151.94:8000`
 - JSONの日時はISO 8601形式（例: `2026-07-15T10:00:00`）です。タイムゾーンなしの日時として扱います。
 - 成功レスポンスには原則 `status: "ok"` が含まれます。
 - リクエスト形式が不正な場合はFastAPIの `422 Unprocessable Entity`、対象児童がない場合は `404 Not Found` です。
