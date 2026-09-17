@@ -8,6 +8,9 @@ const state = {
     selectedDate: new Date()
 };
 
+let refreshTimer = null;
+let refreshInProgress = false;
+
 async function apiRequest(url, options = {}) {
     const headers = { ...(options.headers || {}) };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
@@ -56,25 +59,31 @@ async function loadClasses() {
         ? state.classes.map((item) => `<span>${escapeHtml(item.name)}（${item.child_count}人）</span>`).join('')
         : '<span>クラスが登録されていません</span>';
     const selector = document.getElementById('classSelector');
-    selector.innerHTML = state.classes.length
-        ? state.classes.map((item) => `<option value="${item.class_id}">${escapeHtml(item.name)}　のようす</option>`).join('')
-        : '<option value="">クラスを追加してください</option>';
-    if (!state.selectedClassId && state.classes.length) {
-        state.selectedClassId = state.classes[0].class_id;
-    }
+    selector.innerHTML = '<option value="">全員のようす</option>' + state.classes
+        .map((item) => `<option value="${item.class_id}">${escapeHtml(item.name)}　のようす</option>`).join('');
     selector.value = state.selectedClassId || '';
     await loadDashboard();
 }
 
 async function loadDashboard() {
+    if (refreshInProgress) return;
+    refreshInProgress = true;
+    setMessage('refreshMessage', '更新中...');
     const classQuery = state.selectedClassId ? `?class_id=${state.selectedClassId}` : '';
-    const children = await apiRequest(`/api/children${classQuery}`);
-    state.children = children.children || [];
-    const stats = await apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`);
-    state.steps = {};
-    for (const item of stats.student_ranking || []) state.steps[item.child_id] = item.steps || 0;
-    renderStudents();
-    renderRanking();
+    try {
+        const children = await apiRequest(`/api/children${classQuery}`);
+        state.children = children.children || [];
+        const stats = await apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`);
+        state.steps = {};
+        for (const item of stats.student_ranking || []) state.steps[item.child_id] = item.steps || 0;
+        renderStudents();
+        renderRanking();
+        setMessage('refreshMessage', `最終更新 ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+        setMessage('refreshMessage', error.message);
+    } finally {
+        refreshInProgress = false;
+    }
 }
 
 function renderStudents() {
@@ -285,3 +294,7 @@ if (state.token) {
     showApp();
     loadClasses().catch(() => { localStorage.removeItem('sukusuteToken'); state.token = null; showLogin(); });
 }
+
+refreshTimer = setInterval(() => {
+    if (state.token && !document.hidden) loadDashboard();
+}, 5000);

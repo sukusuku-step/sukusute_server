@@ -155,6 +155,13 @@ body {
     background: #fffafa;
 }
 
+.refresh-message {
+    min-height: 18px;
+    margin: -5px 0 6px 3px;
+    color: #6b4142;
+    font-size: 10px;
+}
+
 .dashboard-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 225px;
