@@ -80,18 +80,17 @@ async def register_teacher(
     data: http_models.RegisterRequest,
     dbsession: database_models.SessionDep,
 ) -> http_models.Result:
-    """初回利用時に教師アカウントを作成する"""
-    count = (await dbsession.execute(
-        sqlalchemy.select(sqlalchemy.func.count()).select_from(database_models.Teacher)
-    )).scalar_one()
-    if count:
-        raise fastapi.HTTPException(409, "教師アカウントは既に登録されています")
-    if not data.username.strip():
+    """ユーザー名が未登録の場合に教師アカウントを作成する"""
+    username = data.username.strip()
+    if not username:
         raise fastapi.HTTPException(422, "ユーザー名は必須です")
+    exists = await dbsession.get(database_models.Teacher, username)
+    if exists:
+        raise fastapi.HTTPException(409, "このユーザー名は既に使われています")
     dbsession.add(database_models.Teacher(
-        username=data.username.strip(),
+        username=username,
         pw_hash=hash_password(data.password),
-        name=data.username.strip(),
+        name=username,
     ))
     await dbsession.commit()
     return http_models.Result(status="ok", msg="アカウントを作成しました")
@@ -102,7 +101,8 @@ async def login_teacher(
     data: http_models.LoginRequest,
     dbsession: database_models.SessionDep,
 ) -> http_models.LoginResponse:
-    teacher = await dbsession.get(database_models.Teacher, data.username)
+    username = data.username.strip()
+    teacher = await dbsession.get(database_models.Teacher, username)
     if not teacher or not verify_password(data.password, teacher.pw_hash):
         raise fastapi.HTTPException(401, "ユーザー名またはパスワードが違います")
     token = secrets.token_urlsafe(32)

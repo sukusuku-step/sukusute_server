@@ -158,6 +158,7 @@ function formatDate(date) {
 
 document.getElementById('loginForm').addEventListener('submit', async (event) => {
     event.preventDefault();
+    setMessage('loginMessage', '');
     try {
         await login(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
     } catch (error) {
@@ -167,6 +168,7 @@ document.getElementById('loginForm').addEventListener('submit', async (event) =>
 
 document.getElementById('registerForm').addEventListener('submit', async (event) => {
     event.preventDefault();
+    setMessage('registerMessage', '');
     try {
         await apiRequest('/api/auth/register', { method: 'POST', body: JSON.stringify({
             username: document.getElementById('registerUsername').value,
