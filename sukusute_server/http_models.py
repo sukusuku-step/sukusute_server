@@ -7,7 +7,7 @@ import uuid
 import pydantic
 
 
-# ===== 基本モデル =====
+# ===== 共通レスポンスと認証・クラス管理 =====
 
 class Result(pydantic.BaseModel):
     """ エンドポイントの結果 """
@@ -15,7 +15,45 @@ class Result(pydantic.BaseModel):
     msg: typing.Optional[str] = None
 
 
-# ===== 児童データモデル =====
+class LoginRequest(pydantic.BaseModel):
+    username: str
+    password: str
+
+
+class RegisterRequest(LoginRequest):
+    pass
+
+
+class LoginResponse(Result):
+    token: str
+    username: str
+    name: str
+
+
+class ClassCreateRequest(pydantic.BaseModel):
+    name: str
+
+
+class ClassItem(pydantic.BaseModel):
+    class_id: int
+    name: str
+    child_count: int
+
+
+class ClassListResponse(Result):
+    classes: list[ClassItem]
+
+
+class ClassResponse(Result):
+    class_id: int
+    name: str
+
+
+class ChildClassRequest(pydantic.BaseModel):
+    class_id: typing.Optional[int] = None
+
+
+# ===== デバイスから受信する児童データ =====
 
 class ChildSingleData(pydantic.BaseModel):
     """ 単独の児童についてのデータ（歩数など） """
@@ -54,13 +92,14 @@ class ChildSearchResponse(Result):
     name: str
 
 
-# ===== 児童一覧モデル =====
+# ===== 児童一覧 =====
 
 class ChildListItem(pydantic.BaseModel):
     """ 児童一覧の項目 """
     child_id: int
     name: str
     device_id: uuid.UUID
+    class_id: typing.Optional[int] = None
 
 
 class ChildrenListResponse(Result):
@@ -68,7 +107,7 @@ class ChildrenListResponse(Result):
     children: list[ChildListItem]
 
 
-# ===== 歩数データモデル =====
+# ===== 歩数と警告 =====
 
 class StepsByHour(pydantic.BaseModel):
     """ 時間別歩数 """
@@ -89,6 +128,7 @@ class StepWarning(pydantic.BaseModel):
     current_steps: int
     average_steps: int
     percent: int  # 普段の平均に対する割合(%)
+    date: datetime.datetime
 
 
 class ChildStepsResponse(Result):
@@ -114,7 +154,7 @@ class ChildStepsHistoryResponse(Result):
     history: list[DailySteps]
 
 
-# ===== 距離データモデル =====
+# ===== 児童間距離と集計 =====
 
 class ChildDistance(pydantic.BaseModel):
     """ 児童の距離データ """
@@ -172,7 +212,7 @@ class DistanceStatsResponse(Result):
     top_pairs: list[PairDistance]
 
 
-# ===== 集計情報モデル =====
+# ===== 全体集計 =====
 
 class StudentRankingItem(pydantic.BaseModel):
     """ 児童ランキング項目 """

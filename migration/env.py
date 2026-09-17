@@ -1,4 +1,5 @@
 from logging.config import fileConfig
+import pathlib
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -10,6 +11,12 @@ import sukusute_server
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Alembic実行時のカレントディレクトリに関係なく、アプリと同じDBを更新する。
+database_path = pathlib.Path(__file__).resolve().parent.parent / "data.sqlite"
+config.set_main_option(
+    "sqlalchemy.url", f"sqlite:///{database_path.as_posix()}"
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -29,6 +36,7 @@ target_metadata = sukusute_server.database_models.Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """DB接続を開かず、SQL文を生成するAlembicモードを実行する。"""
     """Run migrations in 'offline' mode.
 
     This configures the context with just a URL
@@ -53,6 +61,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """SQLiteへ接続し、実DBにAlembicマイグレーションを適用する。"""
     """Run migrations in 'online' mode.
 
     In this scenario we need to create an Engine

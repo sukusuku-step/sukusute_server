@@ -5,9 +5,15 @@ import uuid
 import datetime
 import math
 import pathlib
+import hashlib
+import secrets
+import typing
+import asyncio
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
 from sqlalchemy import or_
@@ -16,7 +22,31 @@ from sukusute_server import http_models, database_models
 
 logger = logging.getLogger(__name__)
 
+# 歩数計算で使う業務ルール。数値を直接書かず、変更箇所を一か所に集約する。
+WALK_TIME_STEPS_PER_MINUTE = 150
+CALORIES_PER_STEP = 0.008
+DAILY_STEP_GOAL = 10000
+STEP_WARNING_RATIO = 0.5
+
 app = fastapi.FastAPI()
+sessions: dict[str, str] = {}
+bearer = HTTPBearer(auto_error=False)
+
+
+def migrate_database() -> None:
+    """プロジェクトルートのSQLiteへ、Alembicの最新スキーマを適用する。"""
+    from alembic import command
+    from alembic.config import Config
+
+    project_root = pathlib.Path(__file__).resolve().parent.parent
+    alembic_config = Config(str(project_root / "alembic.ini"))
+    command.upgrade(alembic_config, "head")
+
+
+@app.on_event("startup")
+async def apply_database_migrations() -> None:
+    """起動処理を止めないよう、マイグレーションを別スレッドで実行する。"""
+    await asyncio.to_thread(migrate_database)
 
 # CORSミドルウェア追加 - フロントエンドからのリクエストを許可
 app.add_middleware(
@@ -27,13 +57,218 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.frontend("/", directory=(pathlib.Path(__file__).parent.parent / "frontend").resolve())
+def hash_password(password: str, salt: bytes | None = None) -> bytes:
+    """パスワードをソルト付きPBKDF2-SHA256でハッシュ化して保存形式にする。"""
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, 310_000
+    )
+    return salt.hex().encode() + b":" + digest.hex().encode()
+
+
+def verify_password(password: str, stored: bytes) -> bool:
+    """保存済みのソルトを使って再計算し、ハッシュを比較する。"""
+    try:
+        salt_hex, digest_hex = stored.split(b":", 1)
+        expected = hash_password(password, bytes.fromhex(salt_hex.decode()))
+        return secrets.compare_digest(expected.split(b":", 1)[1], digest_hex)
+    except (ValueError, UnicodeDecodeError):
+        return False
+
+
+async def current_teacher(
+    credentials: typing.Annotated[
+        HTTPAuthorizationCredentials | None,
+        fastapi.Depends(bearer)
+    ],
+    dbsession: database_models.SessionDep,
+) -> database_models.Teacher:
+    """BearerトークンをDB上の教師に解決し、管理APIの認証を行う。"""
+    if not credentials or credentials.credentials not in sessions:
+        raise fastapi.HTTPException(401, "ログインが必要です")
+    teacher = await dbsession.get(database_models.Teacher, sessions[credentials.credentials])
+    if not teacher:
+        raise fastapi.HTTPException(401, "ログイン情報が無効です")
+    return teacher
+
+
+TeacherDep: typing.TypeAlias = typing.Annotated[
+    database_models.Teacher,
+    fastapi.Depends(current_teacher)
+]
+
+
+# ===== 認証 =====
+
+@app.post("/api/auth/register", tags=["Auth"])
+async def register_teacher(
+    data: http_models.RegisterRequest,
+    dbsession: database_models.SessionDep,
+) -> http_models.Result:
+    """未登録のユーザー名とパスワードで教師アカウントを作成する。"""
+    username = data.username.strip()
+    if not username:
+        raise fastapi.HTTPException(422, "ユーザー名は必須です")
+    exists = await dbsession.get(database_models.Teacher, username)
+    if exists:
+        raise fastapi.HTTPException(409, "このユーザー名は既に使われています")
+    dbsession.add(database_models.Teacher(
+        username=username,
+        pw_hash=hash_password(data.password),
+        name=username,
+    ))
+    await dbsession.commit()
+    return http_models.Result(status="ok", msg="アカウントを作成しました")
+
+
+@app.post("/api/auth/login", tags=["Auth"])
+async def login_teacher(
+    data: http_models.LoginRequest,
+    dbsession: database_models.SessionDep,
+) -> http_models.LoginResponse:
+    """DBの認証情報を検証し、以後のAPIで使う一時Bearerトークンを発行する。"""
+    username = data.username.strip()
+    teacher = await dbsession.get(database_models.Teacher, username)
+    if not teacher or not verify_password(data.password, teacher.pw_hash):
+        raise fastapi.HTTPException(401, "ユーザー名またはパスワードが違います")
+    token = secrets.token_urlsafe(32)
+    sessions[token] = teacher.username
+    return http_models.LoginResponse(
+        status="ok", token=token, username=teacher.username, name=teacher.name
+    )
+
+
+@app.post("/api/auth/logout", tags=["Auth"])
+async def logout_teacher(
+    credentials: typing.Annotated[
+        HTTPAuthorizationCredentials | None,
+        fastapi.Depends(bearer)
+    ],
+    teacher: TeacherDep,
+) -> http_models.Result:
+    """現在のBearerトークンをセッション一覧から削除する。"""
+    if credentials:
+        sessions.pop(credentials.credentials, None)
+    return http_models.Result(status="ok")
+
+
+@app.delete("/api/auth/account", tags=["Auth"])
+async def delete_account(
+    data: http_models.LoginRequest,
+    credentials: typing.Annotated[
+        HTTPAuthorizationCredentials | None,
+        fastapi.Depends(bearer)
+    ],
+    teacher: TeacherDep,
+    dbsession: database_models.SessionDep,
+) -> http_models.Result:
+    """パスワードを再確認して、ログイン中の教師アカウントを削除する"""
+    if data.username != teacher.username or not verify_password(
+        data.password, teacher.pw_hash
+    ):
+        raise fastapi.HTTPException(401, "ユーザー名またはパスワードが違います")
+
+    await dbsession.delete(teacher)
+    await dbsession.commit()
+    for token, username in list(sessions.items()):
+        if username == teacher.username:
+            sessions.pop(token, None)
+    if credentials:
+        sessions.pop(credentials.credentials, None)
+    return http_models.Result(status="ok", msg="アカウントを削除しました")
+
+
+# ===== クラス管理 =====
+
+@app.get("/api/classes", tags=["Classes"])
+async def list_classes(
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.ClassListResponse:
+    """ログイン中の教師が利用できるクラスと所属児童数を返す。"""
+    classes = (await dbsession.execute(
+        sqlalchemy.select(database_models.SchoolClass)
+        .options(sqlalchemy.orm.selectinload(database_models.SchoolClass.children))
+        .order_by(database_models.SchoolClass.class_id)
+    )).scalars().all()
+    return http_models.ClassListResponse(
+        status="ok",
+        classes=[http_models.ClassItem(
+            class_id=school_class.class_id,
+            name=school_class.name,
+            child_count=len(school_class.children),
+        ) for school_class in classes],
+    )
+
+
+@app.post("/api/classes", tags=["Classes"])
+async def create_class(
+    data: http_models.ClassCreateRequest,
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.ClassResponse:
+    """重複しないクラス名で新しいクラスを作成する。"""
+    name = data.name.strip()
+    if not name:
+        raise fastapi.HTTPException(422, "クラス名は必須です")
+    exists = (await dbsession.execute(
+        sqlalchemy.select(database_models.SchoolClass)
+        .where(database_models.SchoolClass.name == name)
+    )).scalar_one_or_none()
+    if exists:
+        raise fastapi.HTTPException(409, "同じクラス名が既にあります")
+    school_class = database_models.SchoolClass(name=name)
+    dbsession.add(school_class)
+    await dbsession.commit()
+    await dbsession.refresh(school_class)
+    return http_models.ClassResponse(
+        status="ok", class_id=school_class.class_id, name=school_class.name
+    )
+
+
+@app.patch("/api/classes/{class_id:int}", tags=["Classes"])
+async def rename_class(
+    class_id: int,
+    data: http_models.ClassCreateRequest,
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.ClassResponse:
+    """指定したクラスの名前を変更する。"""
+    school_class = await dbsession.get(database_models.SchoolClass, class_id)
+    if not school_class:
+        raise fastapi.HTTPException(404, "クラスが見つかりません")
+    name = data.name.strip()
+    if not name:
+        raise fastapi.HTTPException(422, "クラス名は必須です")
+    school_class.name = name
+    await dbsession.commit()
+    return http_models.ClassResponse(status="ok", class_id=class_id, name=name)
+
+
+@app.patch("/api/children/{child_id:int}/class", tags=["Classes"])
+async def change_child_class(
+    child_id: int,
+    data: http_models.ChildClassRequest,
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.Result:
+    """児童を指定クラスへ移動し、null指定時は未所属に戻す。"""
+    child = await dbsession.get(database_models.Child, child_id)
+    if not child:
+        raise fastapi.HTTPException(404, "児童が見つかりません")
+    if data.class_id is not None and not await dbsession.get(
+        database_models.SchoolClass, data.class_id
+    ):
+        raise fastapi.HTTPException(404, "クラスが見つかりません")
+    child.class_id = data.class_id
+    await dbsession.commit()
+    return http_models.Result(status="ok")
 
 # ===== ヘルスチェック =====
 
 @app.get("/api/health", tags=["API"])
 def health() -> http_models.Result:
-    """ サーバが生きていればokを返す """
+    """サーバーが応答可能であることを示す固定レスポンスを返す。"""
     return http_models.Result(status="ok")
 
 
@@ -44,7 +279,7 @@ async def push_data(
     data: http_models.ChildDataRecord,
     dbsession: database_models.SessionDep
 ) -> http_models.Result:
-    """ データを受け取る（歩数・距離データ） """
+    """デバイスから歩数・距離を受信し、対応するテーブルへ保存する。"""
     logger.info(
         f"Received data: child_id={data.child_id}, "
         f"singledata={data.singledata}, distances={data.distances}"
@@ -87,6 +322,12 @@ async def push_data(
         logger.info(f"Added steps: {data.child_id} = {data.singledata.steps}")
 
     await dbsession.commit()
+    logger.info(
+        "[push_data] saved child_id=%s steps=%s distances=%s",
+        data.child_id,
+        data.singledata.steps if data.singledata else None,
+        len(data.distances or []),
+    )
     return http_models.Result(status="ok")
 
 
@@ -97,7 +338,7 @@ async def search_child_by_name(
     name: str,
     dbsession: database_models.SessionDep
 ) -> http_models.ChildSearchResponse:
-    """ 児童名からchild_idを検索 """
+    """児童名を完全一致検索し、未登録なら児童レコードを新規作成する。"""
     child = (await dbsession.execute(
         sqlalchemy.select(database_models.Child)
         .where(database_models.Child.name == name)
@@ -122,7 +363,7 @@ async def child_info(
     child_id: int,
     dbsession: database_models.SessionDep
 ) -> http_models.ChildDataResponse:
-    """ 児童のすべての情報（歩数・距離データを含む）を取得 """
+    """指定児童の基本情報、歩数履歴、児童間距離をまとめて返す。"""
     target_child = (await dbsession.execute(
         sqlalchemy.select(database_models.Child)
         .where(database_models.Child.child_id == child_id)
@@ -171,7 +412,7 @@ async def child_info(
 async def api_create_debug_child(
     dbsession: database_models.SessionDep
 ) -> http_models.Result:
-    """ デバッグ用：児童を作成 """
+    """デバッグ用にTest Childという児童を1件作成する。"""
     child = database_models.Child(
         name="Test Child",
         device_id=uuid.uuid4()
@@ -183,12 +424,15 @@ async def api_create_debug_child(
 
 @app.get("/api/children", tags=["API"])
 async def list_children(
-    dbsession: database_models.SessionDep
+    dbsession: database_models.SessionDep,
+    class_id: int | None = None,
 ) -> http_models.ChildrenListResponse:
-    """ 児童一覧を取得 """
+    """児童一覧をID順で返し、class_id指定時は所属クラスで絞り込む。"""
+    query = sqlalchemy.select(database_models.Child)
+    if class_id is not None:
+        query = query.where(database_models.Child.class_id == class_id)
     children = (await dbsession.execute(
-        sqlalchemy.select(database_models.Child)
-        .order_by(database_models.Child.child_id)
+        query.order_by(database_models.Child.child_id)
     )).scalars().all()
 
     return http_models.ChildrenListResponse(
@@ -197,7 +441,8 @@ async def list_children(
             http_models.ChildListItem(
                 child_id=child.child_id,
                 name=child.name,
-                device_id=child.device_id
+                device_id=child.device_id,
+                class_id=child.class_id,
             )
             for child in children
         ]
@@ -214,7 +459,7 @@ async def get_child_steps(
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
 ) -> http_models.ChildStepsResponse:
-    """ 特定児童の歩数データを取得 """
+    """指定日の最新歩数、前日比、履歴、歩行時間、カロリーを返す。"""
     # 指定日の開始時刻
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
     end_date = datetime.datetime(year, month, day, 23, 59, 59)
@@ -262,9 +507,9 @@ async def get_child_steps(
     yesterday_steps = prev_step_data.steps if prev_step_data else 0
 
     # 歩行時間（歩数/150 = 分）
-    walk_time = math.floor(today_steps / 150)
+    walk_time = math.floor(today_steps / WALK_TIME_STEPS_PER_MINUTE)
     # カロリ（歩数*0.008）
-    calories = math.floor(today_steps * 0.008)
+    calories = math.floor(today_steps * CALORIES_PER_STEP)
 
     # 過去7日間の履歴を取得
     today_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -302,7 +547,7 @@ async def get_child_steps(
         ),
         walk_time=walk_time,
         calories=calories,
-        goal_met=today_steps >= 10000
+        goal_met=today_steps >= DAILY_STEP_GOAL
     )
 
 
@@ -312,7 +557,7 @@ async def get_child_steps_history(
     dbsession: database_models.SessionDep,
     days: int = 7,
 ) -> http_models.ChildStepsHistoryResponse:
-    """ 特定児童の歩数履歴を取得 """
+    """現在日から指定日数分の歩数履歴を返す。"""
     today = datetime.datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -351,7 +596,7 @@ async def get_today_stats(
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
 ) -> http_models.TodayStatsResponse:
-    """ 今日の集計情報を取得 """
+    """指定日の全児童歩数、ランキング、時間別集計、警告を返す。"""
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
     end_date = datetime.datetime(year, month, day, 23, 59, 59)
 
@@ -391,10 +636,12 @@ async def get_today_stats(
     # child_idごとに最新のデータのみを抽出
     student_steps = {}
     student_child_ids = {}
+    latest_step_records = {}
     for child_id, name, steps_val, date_val in all_step_data:
         if child_id not in student_steps:
             student_steps[child_id] = steps_val
             student_child_ids[name] = child_id
+            latest_step_records[child_id] = (name, steps_val, date_val)
 
     total_steps = sum(student_steps.values())
 
@@ -410,9 +657,11 @@ async def get_today_stats(
     )
 
     avg_steps = total_steps // num_students if num_students > 0 else 0
-    walk_time = math.floor(total_steps / 150)
-    calories = math.floor(total_steps * 0.008)
-    goal_met_count = sum(1 for s in student_steps.values() if s >= 10000)
+    walk_time = math.floor(total_steps / WALK_TIME_STEPS_PER_MINUTE)
+    calories = math.floor(total_steps * CALORIES_PER_STEP)
+    goal_met_count = sum(
+        1 for s in student_steps.values() if s >= DAILY_STEP_GOAL
+    )
 
     # 前日比較
     today_datetime = datetime.datetime(year, month, day, 0, 0, 0)
@@ -438,7 +687,7 @@ async def get_today_stats(
 
     # 歩数が普段より少ない児童を検出（警告）
     warnings = []
-    for child_id_val, name, steps_val, date_val in list(all_step_data):
+    for child_id_val, (name, steps_val, date_val) in latest_step_records.items():
         # この児童の過去7日間の平均を計算
         week_start = datetime.datetime.now().replace(
             hour=0, minute=0, second=0, microsecond=0
@@ -453,13 +702,14 @@ async def get_today_stats(
 
         if len(week_data) >= 3:
             avg_weekly = sum(d.steps for d in week_data) / len(week_data)
-            if avg_weekly > 0 and steps_val < avg_weekly * 0.5:
+            if avg_weekly > 0 and steps_val < avg_weekly * STEP_WARNING_RATIO:
                 warnings.append(http_models.StepWarning(
                     child_id=child_id_val,
                     name=name,
                     current_steps=steps_val,
                     average_steps=math.floor(avg_weekly),
-                    percent=math.floor(steps_val / avg_weekly * 100)
+                    percent=math.floor(steps_val / avg_weekly * 100),
+                    date=date_val,
                 ))
 
     # 時間別集計（その日の全データから時間別を集計）
@@ -534,7 +784,7 @@ async def get_child_distances(
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
 ) -> http_models.ChildDistancesResponse:
-    """ 特定児童の距離データを取得 """
+    """指定日の児童間距離一覧と距離統計を返す。"""
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
     end_date = datetime.datetime(year, month, day, 23, 59, 59)
 
@@ -625,7 +875,7 @@ async def get_distance_today_stats(
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
 ) -> http_models.DistanceStatsResponse:
-    """ 今日の距離データの集計情報を取得 """
+    """指定日の距離合計、児童別統計、上位ペアを返す。"""
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
     end_date = datetime.datetime(year, month, day, 23, 59, 59)
 
@@ -736,7 +986,7 @@ async def get_monthly_stats(
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
 ) -> http_models.MonthlyStatsResponse:
-    """ 月間集計情報を取得 """
+    """指定月の歩数合計、距離合計、月末日、残日数を返す。"""
     import calendar
 
     # 月の最終日
@@ -783,3 +1033,11 @@ async def get_monthly_stats(
         remaining_days=remaining_days,
         last_day=last_day
     )
+
+
+# APIルートを先に登録した後でフロントエンドを配信する。
+app.mount(
+    "/",
+    StaticFiles(directory=(pathlib.Path(__file__).parent.parent / "frontend").resolve(), html=True),
+    name="frontend",
+)
