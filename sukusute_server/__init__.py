@@ -125,6 +125,32 @@ async def logout_teacher(
     return http_models.Result(status="ok")
 
 
+@app.delete("/api/auth/account", tags=["Auth"])
+async def delete_account(
+    data: http_models.LoginRequest,
+    credentials: typing.Annotated[
+        HTTPAuthorizationCredentials | None,
+        fastapi.Depends(bearer)
+    ],
+    teacher: TeacherDep,
+    dbsession: database_models.SessionDep,
+) -> http_models.Result:
+    """パスワードを再確認して、ログイン中の教師アカウントを削除する"""
+    if data.username != teacher.username or not verify_password(
+        data.password, teacher.pw_hash
+    ):
+        raise fastapi.HTTPException(401, "ユーザー名またはパスワードが違います")
+
+    await dbsession.delete(teacher)
+    await dbsession.commit()
+    for token, username in list(sessions.items()):
+        if username == teacher.username:
+            sessions.pop(token, None)
+    if credentials:
+        sessions.pop(credentials.credentials, None)
+    return http_models.Result(status="ok", msg="アカウントを削除しました")
+
+
 # ===== クラス管理 =====
 
 @app.get("/api/classes", tags=["Classes"])
