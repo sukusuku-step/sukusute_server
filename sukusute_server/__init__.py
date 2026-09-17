@@ -86,8 +86,8 @@ async def register_teacher(
     )).scalar_one()
     if count:
         raise fastapi.HTTPException(409, "教師アカウントは既に登録されています")
-    if not data.username.strip() or len(data.password) < 8:
-        raise fastapi.HTTPException(422, "ユーザー名と8文字以上のパスワードが必要です")
+    if not data.username.strip():
+        raise fastapi.HTTPException(422, "ユーザー名は必須です")
     dbsession.add(database_models.Teacher(
         username=data.username.strip(),
         pw_hash=hash_password(data.password),

@@ -101,7 +101,7 @@ uv run alembic revision --autogenerate -m "変更内容"
 
 #### `POST /api/auth/register`
 
-初回セットアップ用の教師アカウント作成APIです。教師が1件でも登録済みの場合は `409` を返します。パスワードはサーバー内でソルト付きPBKDF2ハッシュとして保存し、8文字以上を必須とします。
+初回セットアップ用の教師アカウント作成APIです。教師が1件でも登録済みの場合は `409` を返します。パスワードの文字数制限はありません。パスワードはサーバー内でソルト付きPBKDF2ハッシュとして保存します。
 
 ```json
 {"username": "yamada", "password": "password123"}
@@ -127,7 +127,7 @@ uv run alembic revision --autogenerate -m "変更内容"
 
 UIではログイン後にメニューの「アカウントを削除」から削除ページを開けます。削除確認とパスワード再入力が必要です。
 
-コマンドから削除する場合は、プロジェクトルートで実行します。
+コマンドから削除する場合は、プロジェクトルートで実行します。CLIではパスワード入力は不要で、ユーザー名だけを指定します。
 
 ```sh
 uv run python delete_account.py <username>
@@ -139,7 +139,7 @@ uv run python delete_account.py <username>
 uv run python delete_account.py <username> --yes
 ```
 
-どちらの場合もパスワード入力が求められます。パスワードは画面には表示されず、認証に成功した場合だけ `teacher` テーブルから削除されます。
+CLIではユーザー名が存在すれば `teacher` テーブルから削除されます。確認プロンプトを省略できるため、実行対象を間違えないよう注意してください。UI/APIからの削除では、引き続き現在のパスワード再入力が必要です。
 
 ### クラス管理API
 

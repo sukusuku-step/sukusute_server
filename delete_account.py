@@ -1,17 +1,15 @@
-"""教師アカウントをパスワード確認付きで削除するCLI。"""
+"""教師アカウントをユーザー名で削除するCLI。"""
 
 import argparse
 import asyncio
-import getpass
 
 from sukusute_server import database_models
-from sukusute_server import verify_password
 
 
-async def delete_account(username: str, password: str) -> bool:
+async def delete_account(username: str) -> bool:
     async with database_models.AsyncSession(database_models.engine) as session:
         teacher = await session.get(database_models.Teacher, username)
-        if not teacher or not verify_password(password, teacher.pw_hash):
+        if not teacher:
             return False
         await session.delete(teacher)
         await session.commit()
@@ -30,11 +28,10 @@ def main() -> None:
         if answer.strip().lower() != "y":
             print("キャンセルしました")
             return
-    password = getpass.getpass("パスワード: ")
-    if asyncio.run(delete_account(args.username, password)):
+    if asyncio.run(delete_account(args.username)):
         print("アカウントを削除しました")
     else:
-        print("ユーザー名またはパスワードが違います")
+        print("指定されたユーザーが見つかりません")
 
 
 if __name__ == "__main__":
