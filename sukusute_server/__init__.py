@@ -8,6 +8,7 @@ import pathlib
 import hashlib
 import secrets
 import typing
+import asyncio
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +25,21 @@ logger = logging.getLogger(__name__)
 app = fastapi.FastAPI()
 sessions: dict[str, str] = {}
 bearer = HTTPBearer(auto_error=False)
+
+
+def migrate_database() -> None:
+    """サーバー起動時に、アプリと同じDBへ最新マイグレーションを適用する"""
+    from alembic import command
+    from alembic.config import Config
+
+    project_root = pathlib.Path(__file__).resolve().parent.parent
+    alembic_config = Config(str(project_root / "alembic.ini"))
+    command.upgrade(alembic_config, "head")
+
+
+@app.on_event("startup")
+async def apply_database_migrations() -> None:
+    await asyncio.to_thread(migrate_database)
 
 # CORSミドルウェア追加 - フロントエンドからのリクエストを許可
 app.add_middleware(
