@@ -307,6 +307,12 @@ async def push_data(
         logger.info(f"Added steps: {data.child_id} = {data.singledata.steps}")
 
     await dbsession.commit()
+    logger.info(
+        "[push_data] saved child_id=%s steps=%s distances=%s",
+        data.child_id,
+        data.singledata.steps if data.singledata else None,
+        len(data.distances or []),
+    )
     return http_models.Result(status="ok")
 
 

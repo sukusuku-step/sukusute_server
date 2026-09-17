@@ -12,6 +12,7 @@ let refreshTimer = null;
 let refreshInProgress = false;
 
 async function apiRequest(url, options = {}) {
+    console.info('[ui] API request', options.method || 'GET', url);
     const headers = { ...(options.headers || {}) };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     if (options.body) headers['Content-Type'] = 'application/json';
@@ -23,7 +24,11 @@ async function apiRequest(url, options = {}) {
         showLogin();
         throw new Error('ログインの有効期限が切れています。もう一度ログインしてください。');
     }
-    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    if (!response.ok) {
+        console.error('[ui] API error', response.status, url, body);
+        throw new Error(body.detail || `HTTP ${response.status}`);
+    }
+    console.info('[ui] API response', response.status, url);
     return body;
 }
 
@@ -53,6 +58,7 @@ function showLogin() {
 }
 
 async function loadClasses() {
+    console.info('[ui] loading classes');
     const result = await apiRequest('/api/classes');
     state.classes = result.classes || [];
     document.getElementById('classSummary').innerHTML = state.classes.length
@@ -68,6 +74,10 @@ async function loadClasses() {
 async function loadDashboard() {
     if (refreshInProgress) return;
     refreshInProgress = true;
+    console.info('[ui] dashboard refresh started', {
+        classId: state.selectedClassId,
+        date: formatDate(state.selectedDate)
+    });
     setMessage('refreshMessage', '更新中...');
     const classQuery = state.selectedClassId ? `?class_id=${state.selectedClassId}` : '';
     try {
@@ -79,8 +89,13 @@ async function loadDashboard() {
         renderStudents();
         renderRanking();
         setMessage('refreshMessage', `最終更新 ${new Date().toLocaleTimeString()}`);
+        console.info('[ui] dashboard refresh completed', {
+            children: state.children.length,
+            steps: Object.keys(state.steps).length
+        });
     } catch (error) {
         setMessage('refreshMessage', error.message);
+        console.error('[ui] dashboard refresh failed', error);
     } finally {
         refreshInProgress = false;
     }
@@ -221,7 +236,11 @@ document.getElementById('openClassButton').addEventListener('click', () => { ope
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
-document.querySelector('[data-action="refresh"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); loadDashboard(); });
+document.querySelector('[data-action="refresh"]').addEventListener('click', () => {
+    document.getElementById('menuPanel').classList.remove('is-open');
+    console.info('[ui] manual refresh clicked');
+    loadDashboard();
+});
 document.querySelector('[data-action="account-delete"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openAccountDeleteModal(); });
 document.querySelector('[data-action="logout"]').addEventListener('click', async () => {
     try { await apiRequest('/api/auth/logout', { method: 'POST' }); } catch (error) { console.error(error); }
@@ -296,5 +315,8 @@ if (state.token) {
 }
 
 refreshTimer = setInterval(() => {
-    if (state.token && !document.hidden) loadDashboard();
+    if (state.token && !document.hidden) {
+        console.info('[ui] automatic refresh triggered');
+        loadDashboard();
+    }
 }, 5000);
