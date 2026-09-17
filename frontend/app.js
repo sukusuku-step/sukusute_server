@@ -88,6 +88,7 @@ async function loadDashboard() {
         for (const item of stats.student_ranking || []) state.steps[item.child_id] = item.steps || 0;
         renderStudents();
         renderRanking();
+        renderWarnings(stats.warnings || []);
         setMessage('refreshMessage', `最終更新 ${new Date().toLocaleTimeString()}`);
         console.info('[ui] dashboard refresh completed', {
             children: state.children.length,
@@ -129,6 +130,22 @@ function renderRanking() {
             ? `<span>${index + 1}.</span><strong>${escapeHtml(child.name || `児童${child.child_id}`)}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
+}
+
+function renderWarnings(warnings) {
+    const warningList = document.getElementById('warningList');
+    const visibleChildIds = new Set(state.children.map((child) => child.child_id));
+    const visibleWarnings = warnings.filter((warning) => visibleChildIds.has(warning.child_id));
+    if (!visibleWarnings.length) {
+        warningList.innerHTML = '<p class="warning-empty">異常はありません</p>';
+        return;
+    }
+    warningList.innerHTML = visibleWarnings.map((warning) => `
+        <article class="warning-item">
+            <strong>${escapeHtml(warning.name)}</strong>
+            <span>歩数 ${warning.current_steps.toLocaleString()}歩</span>
+            <small>普段の${warning.percent}%（平均 ${warning.average_steps.toLocaleString()}歩）</small>
+        </article>`).join('');
 }
 
 async function openClassModal() {
