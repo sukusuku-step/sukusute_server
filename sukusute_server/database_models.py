@@ -36,6 +36,17 @@ class Base(DeclarativeBase):
     pass
 
 
+# ===== クラスモデル =====
+
+class SchoolClass(Base):
+    """クラス情報を管理するテーブル"""
+    __tablename__ = "school_class"
+
+    class_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(unique=True)
+    children: Mapped[list[Child]] = relationship(back_populates="school_class")
+
+
 # ===== 児童モデル =====
 
 class Child(Base):
@@ -45,6 +56,13 @@ class Child(Base):
     child_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str]
     device_id: Mapped[uuid.UUID]
+    class_id: Mapped[int | None] = mapped_column(
+        ForeignKey("school_class.class_id"), nullable=True
+    )
+
+    school_class: Mapped[SchoolClass | None] = relationship(
+        back_populates="children"
+    )
 
     # 単独データ（歩数など）
     singledata: Mapped[list[SingleChildData]] = relationship(

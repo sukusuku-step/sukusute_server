@@ -15,6 +15,44 @@ class Result(pydantic.BaseModel):
     msg: typing.Optional[str] = None
 
 
+class LoginRequest(pydantic.BaseModel):
+    username: str
+    password: str
+
+
+class RegisterRequest(LoginRequest):
+    name: str
+
+
+class LoginResponse(Result):
+    token: str
+    username: str
+    name: str
+
+
+class ClassCreateRequest(pydantic.BaseModel):
+    name: str
+
+
+class ClassItem(pydantic.BaseModel):
+    class_id: int
+    name: str
+    child_count: int
+
+
+class ClassListResponse(Result):
+    classes: list[ClassItem]
+
+
+class ClassResponse(Result):
+    class_id: int
+    name: str
+
+
+class ChildClassRequest(pydantic.BaseModel):
+    class_id: typing.Optional[int] = None
+
+
 # ===== 児童データモデル =====
 
 class ChildSingleData(pydantic.BaseModel):
@@ -61,6 +99,7 @@ class ChildListItem(pydantic.BaseModel):
     child_id: int
     name: str
     device_id: uuid.UUID
+    class_id: typing.Optional[int] = None
 
 
 class ChildrenListResponse(Result):

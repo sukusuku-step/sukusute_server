@@ -5,9 +5,14 @@ import uuid
 import datetime
 import math
 import pathlib
+import hashlib
+import secrets
+import typing
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
 from sqlalchemy import or_
@@ -17,6 +22,8 @@ from sukusute_server import http_models, database_models
 logger = logging.getLogger(__name__)
 
 app = fastapi.FastAPI()
+sessions: dict[str, str] = {}
+bearer = HTTPBearer(auto_error=False)
 
 # CORSミドルウェア追加 - フロントエンドからのリクエストを許可
 app.add_middleware(
@@ -27,7 +34,178 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.frontend("/", directory=(pathlib.Path(__file__).parent.parent / "frontend").resolve())
+def hash_password(password: str, salt: bytes | None = None) -> bytes:
+    """ソルト付きPBKDF2ハッシュを作成する"""
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, 310_000
+    )
+    return salt.hex().encode() + b":" + digest.hex().encode()
+
+
+def verify_password(password: str, stored: bytes) -> bool:
+    try:
+        salt_hex, digest_hex = stored.split(b":", 1)
+        expected = hash_password(password, bytes.fromhex(salt_hex.decode()))
+        return secrets.compare_digest(expected.split(b":", 1)[1], digest_hex)
+    except (ValueError, UnicodeDecodeError):
+        return False
+
+
+async def current_teacher(
+    credentials: typing.Annotated[
+        HTTPAuthorizationCredentials | None,
+        fastapi.Depends(bearer)
+    ],
+    dbsession: database_models.SessionDep,
+) -> database_models.Teacher:
+    if not credentials or credentials.credentials not in sessions:
+        raise fastapi.HTTPException(401, "ログインが必要です")
+    teacher = await dbsession.get(database_models.Teacher, sessions[credentials.credentials])
+    if not teacher:
+        raise fastapi.HTTPException(401, "ログイン情報が無効です")
+    return teacher
+
+
+TeacherDep: typing.TypeAlias = typing.Annotated[
+    database_models.Teacher,
+    fastapi.Depends(current_teacher)
+]
+
+
+# ===== 認証 =====
+
+@app.post("/api/auth/register", tags=["Auth"])
+async def register_teacher(
+    data: http_models.RegisterRequest,
+    dbsession: database_models.SessionDep,
+) -> http_models.Result:
+    """初回利用時に教師アカウントを作成する"""
+    count = (await dbsession.execute(
+        sqlalchemy.select(sqlalchemy.func.count()).select_from(database_models.Teacher)
+    )).scalar_one()
+    if count:
+        raise fastapi.HTTPException(409, "教師アカウントは既に登録されています")
+    if not data.username.strip() or len(data.password) < 8:
+        raise fastapi.HTTPException(422, "ユーザー名と8文字以上のパスワードが必要です")
+    dbsession.add(database_models.Teacher(
+        username=data.username.strip(),
+        pw_hash=hash_password(data.password),
+        name=data.name.strip() or data.username.strip(),
+    ))
+    await dbsession.commit()
+    return http_models.Result(status="ok", msg="アカウントを作成しました")
+
+
+@app.post("/api/auth/login", tags=["Auth"])
+async def login_teacher(
+    data: http_models.LoginRequest,
+    dbsession: database_models.SessionDep,
+) -> http_models.LoginResponse:
+    teacher = await dbsession.get(database_models.Teacher, data.username)
+    if not teacher or not verify_password(data.password, teacher.pw_hash):
+        raise fastapi.HTTPException(401, "ユーザー名またはパスワードが違います")
+    token = secrets.token_urlsafe(32)
+    sessions[token] = teacher.username
+    return http_models.LoginResponse(
+        status="ok", token=token, username=teacher.username, name=teacher.name
+    )
+
+
+@app.post("/api/auth/logout", tags=["Auth"])
+async def logout_teacher(
+    credentials: typing.Annotated[
+        HTTPAuthorizationCredentials | None,
+        fastapi.Depends(bearer)
+    ],
+    teacher: TeacherDep,
+) -> http_models.Result:
+    if credentials:
+        sessions.pop(credentials.credentials, None)
+    return http_models.Result(status="ok")
+
+
+# ===== クラス管理 =====
+
+@app.get("/api/classes", tags=["Classes"])
+async def list_classes(
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.ClassListResponse:
+    classes = (await dbsession.execute(
+        sqlalchemy.select(database_models.SchoolClass)
+        .options(sqlalchemy.orm.selectinload(database_models.SchoolClass.children))
+        .order_by(database_models.SchoolClass.class_id)
+    )).scalars().all()
+    return http_models.ClassListResponse(
+        status="ok",
+        classes=[http_models.ClassItem(
+            class_id=school_class.class_id,
+            name=school_class.name,
+            child_count=len(school_class.children),
+        ) for school_class in classes],
+    )
+
+
+@app.post("/api/classes", tags=["Classes"])
+async def create_class(
+    data: http_models.ClassCreateRequest,
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.ClassResponse:
+    name = data.name.strip()
+    if not name:
+        raise fastapi.HTTPException(422, "クラス名は必須です")
+    exists = (await dbsession.execute(
+        sqlalchemy.select(database_models.SchoolClass)
+        .where(database_models.SchoolClass.name == name)
+    )).scalar_one_or_none()
+    if exists:
+        raise fastapi.HTTPException(409, "同じクラス名が既にあります")
+    school_class = database_models.SchoolClass(name=name)
+    dbsession.add(school_class)
+    await dbsession.commit()
+    await dbsession.refresh(school_class)
+    return http_models.ClassResponse(
+        status="ok", class_id=school_class.class_id, name=school_class.name
+    )
+
+
+@app.patch("/api/classes/{class_id:int}", tags=["Classes"])
+async def rename_class(
+    class_id: int,
+    data: http_models.ClassCreateRequest,
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.ClassResponse:
+    school_class = await dbsession.get(database_models.SchoolClass, class_id)
+    if not school_class:
+        raise fastapi.HTTPException(404, "クラスが見つかりません")
+    name = data.name.strip()
+    if not name:
+        raise fastapi.HTTPException(422, "クラス名は必須です")
+    school_class.name = name
+    await dbsession.commit()
+    return http_models.ClassResponse(status="ok", class_id=class_id, name=name)
+
+
+@app.patch("/api/children/{child_id:int}/class", tags=["Classes"])
+async def change_child_class(
+    child_id: int,
+    data: http_models.ChildClassRequest,
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.Result:
+    child = await dbsession.get(database_models.Child, child_id)
+    if not child:
+        raise fastapi.HTTPException(404, "児童が見つかりません")
+    if data.class_id is not None and not await dbsession.get(
+        database_models.SchoolClass, data.class_id
+    ):
+        raise fastapi.HTTPException(404, "クラスが見つかりません")
+    child.class_id = data.class_id
+    await dbsession.commit()
+    return http_models.Result(status="ok")
 
 # ===== ヘルスチェック =====
 
@@ -183,12 +361,15 @@ async def api_create_debug_child(
 
 @app.get("/api/children", tags=["API"])
 async def list_children(
-    dbsession: database_models.SessionDep
+    dbsession: database_models.SessionDep,
+    class_id: int | None = None,
 ) -> http_models.ChildrenListResponse:
     """ 児童一覧を取得 """
+    query = sqlalchemy.select(database_models.Child)
+    if class_id is not None:
+        query = query.where(database_models.Child.class_id == class_id)
     children = (await dbsession.execute(
-        sqlalchemy.select(database_models.Child)
-        .order_by(database_models.Child.child_id)
+        query.order_by(database_models.Child.child_id)
     )).scalars().all()
 
     return http_models.ChildrenListResponse(
@@ -197,7 +378,8 @@ async def list_children(
             http_models.ChildListItem(
                 child_id=child.child_id,
                 name=child.name,
-                device_id=child.device_id
+                device_id=child.device_id,
+                class_id=child.class_id,
             )
             for child in children
         ]
@@ -783,3 +965,11 @@ async def get_monthly_stats(
         remaining_days=remaining_days,
         last_day=last_day
     )
+
+
+# APIルートを先に登録した後でフロントエンドを配信する。
+app.mount(
+    "/",
+    StaticFiles(directory=(pathlib.Path(__file__).parent.parent / "frontend").resolve(), html=True),
+    name="frontend",
+)
