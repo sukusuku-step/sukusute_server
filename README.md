@@ -127,16 +127,16 @@ uv run alembic revision --autogenerate -m "変更内容"
 
 UIではログイン後にメニューの「アカウントを削除」から削除ページを開けます。削除確認とパスワード再入力が必要です。
 
-コマンドから削除する場合は、プロジェクトルートで実行します。CLIではパスワード入力は不要で、ユーザー名だけを指定します。
+コマンドから削除する場合は、プロジェクトルートで実行します。CLIではパスワード入力は不要で、ユーザー名または教師名を指定します。既存アカウントの登録時に表示名を使っていた場合も、教師名で削除できます。
 
 ```sh
-uv run python delete_account.py <username>
+uv run python delete_account.py <username-or-teacher-name>
 ```
 
 確認プロンプトを省略する場合:
 
 ```sh
-uv run python delete_account.py <username> --yes
+uv run python delete_account.py <username-or-teacher-name> --yes
 ```
 
 CLIではユーザー名が存在すれば `teacher` テーブルから削除されます。確認プロンプトを省略できるため、実行対象を間違えないよう注意してください。UI/APIからの削除では、引き続き現在のパスワード再入力が必要です。
