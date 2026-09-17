@@ -14,6 +14,12 @@ async function apiRequest(url, options = {}) {
     if (options.body) headers['Content-Type'] = 'application/json';
     const response = await fetch(url, { ...options, headers });
     const body = await response.json().catch(() => ({}));
+    if (response.status === 401 && state.token) {
+        localStorage.removeItem('sukusuteToken');
+        state.token = null;
+        showLogin();
+        throw new Error('ログインの有効期限が切れています。もう一度ログインしてください。');
+    }
     if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
     return body;
 }
@@ -102,8 +108,13 @@ function renderRanking() {
 }
 
 async function openClassModal() {
-    await refreshClassList();
-    openModal('classModal');
+    try {
+        await refreshClassList();
+        setMessage('classMessage', '');
+        openModal('classModal');
+    } catch (error) {
+        setMessage('classMessage', error.message);
+    }
 }
 
 async function refreshClassList() {
@@ -197,7 +208,7 @@ document.getElementById('showLoginButton').addEventListener('click', () => {
 });
 document.getElementById('menuButton').addEventListener('click', () => document.getElementById('menuPanel').classList.add('is-open'));
 document.getElementById('closeMenuButton').addEventListener('click', () => document.getElementById('menuPanel').classList.remove('is-open'));
-document.getElementById('openClassButton').addEventListener('click', openClassModal);
+document.getElementById('openClassButton').addEventListener('click', () => { openClassModal(); });
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
@@ -218,12 +229,16 @@ document.getElementById('dateSelector').addEventListener('change', (event) => {
 });
 document.getElementById('classForm').addEventListener('submit', async (event) => {
     event.preventDefault();
+    setMessage('classMessage', '');
     try {
         await apiRequest('/api/classes', { method: 'POST', body: JSON.stringify({ name: document.getElementById('newClassName').value }) });
         document.getElementById('newClassName').value = '';
         await refreshClassList();
         await loadClasses();
-    } catch (error) { alert(error.message); }
+        setMessage('classMessage', 'クラスを追加しました。');
+    } catch (error) {
+        setMessage('classMessage', error.message);
+    }
 });
 document.getElementById('classList').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-rename-class]');
