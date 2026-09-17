@@ -135,7 +135,10 @@ function renderRanking() {
 function renderWarnings(warnings) {
     const warningList = document.getElementById('warningList');
     const visibleChildIds = new Set(state.children.map((child) => child.child_id));
-    const visibleWarnings = warnings.filter((warning) => visibleChildIds.has(warning.child_id));
+    const latestWarnings = new Map();
+    for (const warning of warnings) latestWarnings.set(warning.child_id, warning);
+    const visibleWarnings = [...latestWarnings.values()]
+        .filter((warning) => visibleChildIds.has(warning.child_id));
     if (!visibleWarnings.length) {
         warningList.innerHTML = '<p class="warning-empty">異常はありません</p>';
         return;

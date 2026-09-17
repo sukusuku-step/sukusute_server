@@ -621,10 +621,12 @@ async def get_today_stats(
     # child_idごとに最新のデータのみを抽出
     student_steps = {}
     student_child_ids = {}
+    latest_step_records = {}
     for child_id, name, steps_val, date_val in all_step_data:
         if child_id not in student_steps:
             student_steps[child_id] = steps_val
             student_child_ids[name] = child_id
+            latest_step_records[child_id] = (name, steps_val, date_val)
 
     total_steps = sum(student_steps.values())
 
@@ -668,7 +670,7 @@ async def get_today_stats(
 
     # 歩数が普段より少ない児童を検出（警告）
     warnings = []
-    for child_id_val, name, steps_val, date_val in list(all_step_data):
+    for child_id_val, (name, steps_val, date_val) in latest_step_records.items():
         # この児童の過去7日間の平均を計算
         week_start = datetime.datetime.now().replace(
             hour=0, minute=0, second=0, microsecond=0
