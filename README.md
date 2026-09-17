@@ -77,6 +77,7 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `POST` | `/api/auth/register` | 初回教師登録 | 教師アカウントを1件作成する。既存アカウントがある場合は失敗する |
 | `POST` | `/api/auth/login` | ログイン | DBの教師情報を検証し、Bearerトークンを発行する |
 | `POST` | `/api/auth/logout` | ログアウト | 現在のBearerトークンを無効化する |
+| `DELETE` | `/api/auth/account` | アカウント削除 | パスワードを再確認し、ログイン中の教師アカウントを削除する |
 | `GET` | `/api/classes` | クラス一覧 | ログイン中の教師にクラス一覧と児童数を返す |
 | `POST` | `/api/classes` | クラス追加 | 新しいクラスを作成する |
 | `PATCH` | `/api/classes/{class_id}` | クラス変更 | クラス名を変更する |
@@ -119,6 +120,26 @@ uv run alembic revision --autogenerate -m "変更内容"
 #### `POST /api/auth/logout`
 
 `Authorization: Bearer {token}` を付けて呼び出すと、トークンを無効化します。
+
+#### `DELETE /api/auth/account`
+
+ログイン中の本人が、ユーザー名と現在のパスワードを再入力してアカウントを削除します。削除後は現在のトークンも無効になり、サーバーを再起動してもそのアカウントではログインできません。
+
+UIではログイン後にメニューの「アカウントを削除」から削除ページを開けます。削除確認とパスワード再入力が必要です。
+
+コマンドから削除する場合は、プロジェクトルートで実行します。
+
+```sh
+uv run python delete_account.py <username>
+```
+
+確認プロンプトを省略する場合:
+
+```sh
+uv run python delete_account.py <username> --yes
+```
+
+どちらの場合もパスワード入力が求められます。パスワードは画面には表示されず、認証に成功した場合だけ `teacher` テーブルから削除されます。
 
 ### クラス管理API
 
