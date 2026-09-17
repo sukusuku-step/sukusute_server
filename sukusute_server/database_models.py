@@ -5,6 +5,7 @@ import datetime
 import typing
 import collections.abc
 import itertools
+import pathlib
 import uuid
 
 import fastapi
@@ -13,8 +14,11 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, relationship, mapped_column
 
-# SQLiteデータベースエンジン作成
-engine = create_async_engine("sqlite+aiosqlite:///data.sqlite")
+# プロジェクトルートのDBを常に参照する。起動ディレクトリに依存させない。
+DATABASE_PATH = pathlib.Path(__file__).resolve().parent.parent / "data.sqlite"
+engine = create_async_engine(
+    f"sqlite+aiosqlite:///{DATABASE_PATH.as_posix()}"
+)
 
 
 async def get_session():

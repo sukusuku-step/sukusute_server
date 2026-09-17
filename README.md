@@ -27,6 +27,14 @@ uv run alembic upgrade head
 SUKUSUTE_HOST=0.0.0.0 SUKUSUTE_PORT=3000 uv run python -m sukusute_server
 ```
 
+既存のVPSで `no such table: school_class` が表示される場合は、アプリを停止してから、プロジェクトディレクトリでマイグレーションを実行してください。DBは実行時のカレントディレクトリではなく、プロジェクトルートの `data.sqlite` を使用します。
+
+```sh
+cd /home/ubuntu/sukusute
+uv run alembic upgrade head
+SUKUSUTE_HOST=0.0.0.0 SUKUSUTE_PORT=3000 uv run python -m sukusute_server
+```
+
 外部から接続できない場合は、VPSのファイアウォールでも3000番ポートを許可してください。`ufw` を使う環境では次のように設定します。
 
 ```sh
