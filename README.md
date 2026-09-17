@@ -39,9 +39,28 @@ uv run alembic revision --autogenerate -m "変更内容"
 - リクエスト形式が不正な場合はFastAPIの `422 Unprocessable Entity`、対象児童がない場合は `404 Not Found` です。
 - 距離の単位はkmです。例えば2-60mは `0.002-0.060` で送ります。
 
-## API一覧
+## API一覧と詳細
 
-### ヘルスチェック
+### API一覧
+
+| メソッド | パス | 用途 | 主な動作 |
+| --- | --- | --- | --- |
+| `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
+| `POST` | `/api/push_data` | 歩数・距離の受信 | 指定児童の歩数や児童間距離をデータベースに保存する |
+| `GET` | `/api/children` | 児童一覧 | 登録済み児童を `child_id` 順で返す |
+| `GET` | `/api/children/search?name={name}` | 児童検索・登録 | 名前を完全一致で検索し、なければ新規作成する |
+| `GET` | `/api/children/{child_id}` | 児童データ取得 | 児童情報、歩数、距離の全レコードを返す |
+| `POST` | `/api/create_debug_child` | デバッグ児童作成 | `Test Child` を1件作成する。重複チェックはない |
+| `GET` | `/api/children/{child_id}/steps` | 指定日の歩数 | 指定日の最新歩数、前日比、過去7日履歴などを返す |
+| `GET` | `/api/children/{child_id}/steps/history` | 歩数履歴 | 現在日から指定日数分の歩数を返す |
+| `GET` | `/api/children/{child_id}/distances` | 指定日の距離 | 児童間距離の一覧と、合計・平均・最大・最小を返す |
+| `GET` | `/api/stats/today` | 日次歩数集計 | 全児童の歩数、ランキング、警告などを指定日単位で返す |
+| `GET` | `/api/stats/distance-today` | 日次距離集計 | 全距離、児童別統計、距離の大きい上位5ペアを返す |
+| `GET` | `/api/stats/monthly` | 月間集計 | 指定月の歩数合計、距離合計、残日数などを返す |
+
+以下では、各APIのリクエストとレスポンス、具体的な動作を説明します。
+
+### 各APIの詳細: ヘルスチェック
 
 #### `GET /api/health`
 
