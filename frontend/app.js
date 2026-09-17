@@ -46,6 +46,9 @@ function showLogin() {
 async function loadClasses() {
     const result = await apiRequest('/api/classes');
     state.classes = result.classes || [];
+    document.getElementById('classSummary').innerHTML = state.classes.length
+        ? state.classes.map((item) => `<span>${escapeHtml(item.name)}（${item.child_count}人）</span>`).join('')
+        : '<span>クラスが登録されていません</span>';
     const selector = document.getElementById('classSelector');
     selector.innerHTML = state.classes.length
         ? state.classes.map((item) => `<option value="${item.class_id}">${escapeHtml(item.name)}　のようす</option>`).join('')
@@ -194,6 +197,7 @@ document.getElementById('showLoginButton').addEventListener('click', () => {
 });
 document.getElementById('menuButton').addEventListener('click', () => document.getElementById('menuPanel').classList.add('is-open'));
 document.getElementById('closeMenuButton').addEventListener('click', () => document.getElementById('menuPanel').classList.remove('is-open'));
+document.getElementById('openClassButton').addEventListener('click', openClassModal);
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });

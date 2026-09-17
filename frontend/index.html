@@ -36,12 +36,16 @@
         </header>
         <main class="dashboard">
             <div class="toolbar">
-                <label class="class-selector">
-                    <span class="sr-only">クラスを選択</span>
-                    <select id="classSelector"></select><span class="select-arrow">▶</span>
-                </label>
+                <div class="class-tools">
+                    <label class="class-selector">
+                        <span class="sr-only">クラスを選択</span>
+                        <select id="classSelector"></select><span class="select-arrow">▶</span>
+                    </label>
+                    <button id="openClassButton" class="class-manage-button" type="button">クラスを追加・変更</button>
+                </div>
                 <input id="dateSelector" class="date-selector" type="date" aria-label="日付">
             </div>
+            <div id="classSummary" class="class-summary" aria-label="登録済みクラス"></div>
             <div class="dashboard-layout">
                 <section class="students-panel" aria-label="児童の歩数一覧">
                     <div id="studentGrid" class="student-grid"><div class="loading">児童データを読み込み中...</div></div>
