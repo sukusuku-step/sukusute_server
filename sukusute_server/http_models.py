@@ -7,7 +7,7 @@ import uuid
 import pydantic
 
 
-# ===== 基本モデル =====
+# ===== 共通レスポンスと認証・クラス管理 =====
 
 class Result(pydantic.BaseModel):
     """ エンドポイントの結果 """
@@ -53,7 +53,7 @@ class ChildClassRequest(pydantic.BaseModel):
     class_id: typing.Optional[int] = None
 
 
-# ===== 児童データモデル =====
+# ===== デバイスから受信する児童データ =====
 
 class ChildSingleData(pydantic.BaseModel):
     """ 単独の児童についてのデータ（歩数など） """
@@ -92,7 +92,7 @@ class ChildSearchResponse(Result):
     name: str
 
 
-# ===== 児童一覧モデル =====
+# ===== 児童一覧 =====
 
 class ChildListItem(pydantic.BaseModel):
     """ 児童一覧の項目 """
@@ -107,7 +107,7 @@ class ChildrenListResponse(Result):
     children: list[ChildListItem]
 
 
-# ===== 歩数データモデル =====
+# ===== 歩数と警告 =====
 
 class StepsByHour(pydantic.BaseModel):
     """ 時間別歩数 """
@@ -154,7 +154,7 @@ class ChildStepsHistoryResponse(Result):
     history: list[DailySteps]
 
 
-# ===== 距離データモデル =====
+# ===== 児童間距離と集計 =====
 
 class ChildDistance(pydantic.BaseModel):
     """ 児童の距離データ """
@@ -212,7 +212,7 @@ class DistanceStatsResponse(Result):
     top_pairs: list[PairDistance]
 
 
-# ===== 集計情報モデル =====
+# ===== 全体集計 =====
 
 class StudentRankingItem(pydantic.BaseModel):
     """ 児童ランキング項目 """

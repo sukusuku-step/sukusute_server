@@ -22,7 +22,7 @@ engine = create_async_engine(
 
 
 async def get_session():
-    """ (FastAPI用) セッションを作成 """
+    """各リクエストへ非同期SQLAlchemyセッションを注入する。"""
     async with AsyncSession(engine) as session:
         yield session
 
@@ -48,6 +48,7 @@ class SchoolClass(Base):
 
     class_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(unique=True)
+    # class_idを持つ児童を、クラス一覧から参照するための逆向きリレーション。
     children: Mapped[list[Child]] = relationship(back_populates="school_class")
 
 
@@ -86,12 +87,13 @@ class Child(Base):
 
     @hybrid_property
     def distances(self) -> list[ChildDistanceData]:
-        """ 両方の距離データを結合して返す """
+        """child_id_1側・child_id_2側の距離データを一つにまとめて返す。"""
         return list(itertools.chain(self.distance_1, self.distance_2))
 
     @distances.inplace.expression
     @classmethod
     def _distances_expression(cls) -> SQLColumnExpression[list[ChildDistanceData]]:
+        """SQLAlchemy検索時に両方向の距離レコードを選択する。"""
         return select(ChildDistanceData) \
             .where(or_(
                 ChildDistanceData.child_id_1 == cls.child_id,
@@ -121,7 +123,8 @@ class SingleChildData(Base):
 class ChildDistanceData(Base):
     """ 子ども同士の距離データを蓄積する
     
-    注意: child_1.child_id < child_id_2 となるように制約を設定
+    注意: child_id_1 < child_id_2 となるように制約を設定する。
+    送信方向に依存せず、同じ児童ペアを一意に扱うための並び順。
     """
     __tablename__ = "child_distance"
     __table_args__ = (
@@ -149,13 +152,14 @@ class ChildDistanceData(Base):
 
     @children.inplace.setter
     def _children_setter(self, value: collections.abc.Iterable[Child]) -> None:
-        """ 児童セット - IDの大小に基づいてchild_1, child_2を自動設定 """
+        """児童IDの大小で並べ、DBのchild_id_order制約を満たす。"""
         self.child_1 = min(value, key=lambda i: i.child_id)
         self.child_2 = max(value, key=lambda i: i.child_id)
 
     @children.inplace.expression
     @classmethod
     def _radius_expression(cls) -> SQLColumnExpression[tuple[Child]]:
+        """SQLAlchemy式として距離レコードの両端児童を参照する。"""
         return select(Child) \
             .where(or_(
                 Child.child_id == cls.child_1,

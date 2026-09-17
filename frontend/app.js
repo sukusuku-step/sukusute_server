@@ -8,8 +8,15 @@ const state = {
     selectedDate: new Date()
 };
 
+// 画面表示に使う歩数ルール。カードと警告で同じ基準を使う。
+const STEP_WARNING_THRESHOLD = 3000;
+const WARNING_DECREASE_PERCENT = 60;
+const NORMAL_INCREASE_PERCENT = 20;
+
 let refreshTimer = null;
 let refreshInProgress = false;
+
+// ===== API通信と認証状態 =====
 
 async function apiRequest(url, options = {}) {
     console.info('[ui] API request', options.method || 'GET', url);
@@ -32,9 +39,13 @@ async function apiRequest(url, options = {}) {
     return body;
 }
 
+// 日付をAPIのクエリパラメータ形式へ変換する。
 function dateQuery(date) {
     return `year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`;
 }
+
+// ===== ログイン画面とダッシュボード初期化 =====
+// ログインAPIを呼び、成功したトークンをブラウザへ保存する。
 
 async function login(username, password) {
     const result = await apiRequest('/api/auth/login', {
@@ -47,16 +58,19 @@ async function login(username, password) {
     await loadClasses();
 }
 
+// ダッシュボードを表示し、ログイン画面を隠す。
 function showApp() {
     document.getElementById('loginView').classList.add('is-hidden');
     document.getElementById('appView').classList.remove('is-hidden');
 }
 
+// ログイン画面を表示し、認証が必要な画面を隠す。
 function showLogin() {
     document.getElementById('loginView').classList.remove('is-hidden');
     document.getElementById('appView').classList.add('is-hidden');
 }
 
+// クラス一覧を読み込み、選択欄を更新してから児童データを再取得する。
 async function loadClasses() {
     console.info('[ui] loading classes');
     const result = await apiRequest('/api/classes');
@@ -70,6 +84,9 @@ async function loadClasses() {
     selector.value = state.selectedClassId || '';
     await loadDashboard();
 }
+
+// ===== ダッシュボードのデータ取得と描画 =====
+// 選択中のクラスと日付に対応する児童・歩数を取得して画面を更新する。
 
 async function loadDashboard() {
     if (refreshInProgress) return;
@@ -102,6 +119,7 @@ async function loadDashboard() {
     }
 }
 
+// 児童を歩数順に並べ、歩数カードをHTMLへ描画する。
 function renderStudents() {
     const grid = document.getElementById('studentGrid');
     if (!state.children.length) {
@@ -111,17 +129,18 @@ function renderStudents() {
     const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
     grid.innerHTML = sorted.map((child) => {
         const steps = state.steps[child.child_id] || 0;
-        const warning = steps > 0 && steps < 3000;
+        const warning = steps > 0 && steps < STEP_WARNING_THRESHOLD;
         return `<article class="student-card">
             <div class="student-name">${escapeHtml(child.name || `児童${child.child_id}`)}</div>
             <div class="student-steps">歩数：<strong>${steps.toLocaleString()}</strong></div>
             <div class="student-status ${warning ? 'warning' : 'normal'}">
-                ${warning ? '活動量が<strong>60%</strong>低下' : '通常の活動量より２０％増加'}
+                ${warning ? `活動量が<strong>${WARNING_DECREASE_PERCENT}%</strong>低下` : `通常の活動量より${NORMAL_INCREASE_PERCENT}%増加`}
             </div>
         </article>`;
     }).join('');
 }
 
+// 現在表示中の児童から歩数上位5名をランキングへ描画する。
 function renderRanking() {
     const ranking = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0)).slice(0, 5);
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
@@ -132,6 +151,7 @@ function renderRanking() {
     });
 }
 
+// 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。
 function renderWarnings(warnings) {
     const warningList = document.getElementById('warningList');
     const visibleChildIds = new Set(state.children.map((child) => child.child_id));
@@ -156,6 +176,7 @@ function renderWarnings(warnings) {
         </article>`).join('');
 }
 
+// クラス管理情報を取得してから、クラス管理モーダルを開く。
 async function openClassModal() {
     try {
         await refreshClassList();
@@ -166,6 +187,7 @@ async function openClassModal() {
     }
 }
 
+// クラス一覧と児童の所属クラス選択肢をモーダルへ描画する。
 async function refreshClassList() {
     const result = await apiRequest('/api/classes');
     document.getElementById('classList').innerHTML = (result.classes || []).map((item) => `
@@ -180,6 +202,7 @@ async function refreshClassList() {
         </select></label>`).join('');
 }
 
+// 現在の児童を関係図モーダルへノードとして描画する。
 async function openRelationModal() {
     const graph = document.getElementById('relationGraph');
     graph.innerHTML = state.children.length
@@ -188,16 +211,19 @@ async function openRelationModal() {
     openModal('relationModal');
 }
 
+// 指定したモーダルだけを表示する。
 function openModal(id) {
     document.getElementById('modalLayer').classList.remove('is-hidden');
     document.querySelectorAll('.modal-card').forEach((modal) => modal.classList.add('is-hidden'));
     document.getElementById(id).classList.remove('is-hidden');
 }
 
+// 開いているモーダルを閉じる。
 function closeModal() {
     document.getElementById('modalLayer').classList.add('is-hidden');
 }
 
+// 現在ログイン中のユーザー名を初期値にして削除画面を開く。
 function openAccountDeleteModal() {
     document.getElementById('deleteUsername').value = state.teacher?.username || '';
     document.getElementById('deletePassword').value = '';
@@ -205,19 +231,24 @@ function openAccountDeleteModal() {
     openModal('accountDeleteModal');
 }
 
+// 指定したメッセージ領域へ操作結果を表示する。
 function setMessage(id, message) {
     document.getElementById(id).textContent = message;
 }
 
+// APIから受け取った文字列をHTMLへ安全に埋め込める形へ変換する。
 function escapeHtml(value) {
     return String(value).replace(/[&<>'"]/g, (character) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     }[character]));
 }
 
+// date inputへ設定できるYYYY-MM-DD文字列を作る。
 function formatDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
+
+// ===== 画面フォームとメニューのイベント処理 =====
 
 document.getElementById('loginForm').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -334,6 +365,7 @@ document.getElementById('accountDeleteForm').addEventListener('submit', async (e
     }
 });
 
+// 保存済みトークンがある場合は、ログイン画面を経由せず復元を試みる。
 if (state.token) {
     showApp();
     loadClasses().catch(() => { localStorage.removeItem('sukusuteToken'); state.token = null; showLogin(); });

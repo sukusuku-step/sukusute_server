@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- 未ログイン時に表示する認証フォーム -->
     <div id="loginView" class="login-view">
         <form id="loginForm" class="login-card">
             <h1>すくすくステップ</h1>
@@ -27,6 +28,7 @@
         </form>
     </div>
 
+    <!-- ログイン後の歩数ダッシュボード -->
     <div id="appView" class="is-hidden">
         <header class="app-header">
             <button id="menuButton" class="menu-button" type="button" aria-label="メニューを開く">
@@ -69,6 +71,7 @@
         </main>
     </div>
 
+    <!-- メニューから開く操作パネル -->
     <aside id="menuPanel" class="menu-panel" aria-hidden="true">
         <button id="closeMenuButton" class="close-menu" type="button" aria-label="メニューを閉じる">×</button>
         <button data-action="relation">♧ 関係図を表示</button>
@@ -77,6 +80,7 @@
         <button data-action="account-delete">⌫ アカウントを削除</button>
         <button data-action="logout">⇥ ログアウト</button>
     </aside>
+    <!-- クラス管理・関係図・アカウント削除で共有するモーダル領域 -->
     <div id="modalLayer" class="modal-layer is-hidden">
         <section id="classModal" class="modal-card is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>

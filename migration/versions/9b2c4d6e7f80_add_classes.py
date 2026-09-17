@@ -16,6 +16,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """クラステーブルを作成し、既存児童に任意の所属クラスを追加する。"""
     op.create_table(
         "school_class",
         sa.Column("class_id", sa.Integer(), autoincrement=True, nullable=False),
@@ -31,6 +32,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """児童の所属情報とクラステーブルを元に戻す。"""
     with op.batch_alter_table("child", recreate="always") as batch:
         batch.drop_constraint("fk_child_class_id", type_="foreignkey")
         batch.drop_column("class_id")

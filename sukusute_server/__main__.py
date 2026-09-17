@@ -18,6 +18,7 @@ def run_backend(host: str = "0.0.0.0", port: int = 8000):
         print(f"エラー: {e}")
 
 def main():
+    """環境変数から起動先を読み、バックエンドを開始する。"""
     host = os.getenv("SUKUSUTE_HOST", "0.0.0.0")
     port = int(os.getenv("SUKUSUTE_PORT", "8000"))
     run_backend(host, port)
