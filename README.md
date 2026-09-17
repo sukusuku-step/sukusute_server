@@ -45,9 +45,16 @@ uv run alembic revision --autogenerate -m "変更内容"
 
 | メソッド | パス | 用途 | 主な動作 |
 | --- | --- | --- | --- |
+| `POST` | `/api/auth/register` | 初回教師登録 | 教師アカウントを1件作成する。既存アカウントがある場合は失敗する |
+| `POST` | `/api/auth/login` | ログイン | DBの教師情報を検証し、Bearerトークンを発行する |
+| `POST` | `/api/auth/logout` | ログアウト | 現在のBearerトークンを無効化する |
+| `GET` | `/api/classes` | クラス一覧 | ログイン中の教師にクラス一覧と児童数を返す |
+| `POST` | `/api/classes` | クラス追加 | 新しいクラスを作成する |
+| `PATCH` | `/api/classes/{class_id}` | クラス変更 | クラス名を変更する |
+| `PATCH` | `/api/children/{child_id}/class` | 所属クラス変更 | 児童を指定クラスへ移動する。class_idをnullにすると未所属に戻す |
 | `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
 | `POST` | `/api/push_data` | 歩数・距離の受信 | 指定児童の歩数や児童間距離をデータベースに保存する |
-| `GET` | `/api/children` | 児童一覧 | 登録済み児童を `child_id` 順で返す |
+| `GET` | `/api/children?class_id={class_id}` | 児童一覧 | 登録済み児童を `child_id` 順で返す。class_id指定時はクラスで絞り込む |
 | `GET` | `/api/children/search?name={name}` | 児童検索・登録 | 名前を完全一致で検索し、なければ新規作成する |
 | `GET` | `/api/children/{child_id}` | 児童データ取得 | 児童情報、歩数、距離の全レコードを返す |
 | `POST` | `/api/create_debug_child` | デバッグ児童作成 | `Test Child` を1件作成する。重複チェックはない |
@@ -59,6 +66,52 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `GET` | `/api/stats/monthly` | 月間集計 | 指定月の歩数合計、距離合計、残日数などを返す |
 
 以下では、各APIのリクエストとレスポンス、具体的な動作を説明します。
+
+### 認証API
+
+#### `POST /api/auth/register`
+
+初回セットアップ用の教師アカウント作成APIです。教師が1件でも登録済みの場合は `409` を返します。パスワードはサーバー内でソルト付きPBKDF2ハッシュとして保存し、8文字以上を必須とします。
+
+```json
+{"name": "山田先生", "username": "yamada", "password": "password123"}
+```
+
+#### `POST /api/auth/login`
+
+ユーザー名とパスワードを検証し、以後の管理APIで使うBearerトークンを返します。
+
+```json
+{"username": "yamada", "password": "password123"}
+```
+
+#### `POST /api/auth/logout`
+
+`Authorization: Bearer {token}` を付けて呼び出すと、トークンを無効化します。
+
+### クラス管理API
+
+`/api/classes` の操作にはログイン後のBearerトークンが必要です。
+
+#### `GET /api/classes`
+
+クラスID、クラス名、所属児童数を返します。
+
+#### `POST /api/classes`
+
+次の形式でクラスを追加します。
+
+```json
+{"name": "きりん組"}
+```
+
+#### `PATCH /api/classes/{class_id}`
+
+`{"name": "新しいクラス名"}` を送るとクラス名を変更します。
+
+#### `PATCH /api/children/{child_id}/class`
+
+クラス管理画面から児童の所属を変更するためのAPIです。`{"class_id": 1}` で所属させ、`{"class_id": null}` で未所属に戻します。
 
 ### 各APIの詳細: ヘルスチェック
 
