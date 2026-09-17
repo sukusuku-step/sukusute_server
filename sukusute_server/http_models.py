@@ -128,6 +128,7 @@ class StepWarning(pydantic.BaseModel):
     current_steps: int
     average_steps: int
     percent: int  # 普段の平均に対する割合(%)
+    date: datetime.datetime
 
 
 class ChildStepsResponse(Result):

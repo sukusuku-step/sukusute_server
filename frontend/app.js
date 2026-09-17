@@ -136,7 +136,12 @@ function renderWarnings(warnings) {
     const warningList = document.getElementById('warningList');
     const visibleChildIds = new Set(state.children.map((child) => child.child_id));
     const latestWarnings = new Map();
-    for (const warning of warnings) latestWarnings.set(warning.child_id, warning);
+    for (const warning of warnings) {
+        const previous = latestWarnings.get(warning.child_id);
+        if (!previous || new Date(warning.date).getTime() >= new Date(previous.date).getTime()) {
+            latestWarnings.set(warning.child_id, warning);
+        }
+    }
     const visibleWarnings = [...latestWarnings.values()]
         .filter((warning) => visibleChildIds.has(warning.child_id));
     if (!visibleWarnings.length) {

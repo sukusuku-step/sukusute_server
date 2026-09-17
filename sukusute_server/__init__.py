@@ -691,7 +691,8 @@ async def get_today_stats(
                     name=name,
                     current_steps=steps_val,
                     average_steps=math.floor(avg_weekly),
-                    percent=math.floor(steps_val / avg_weekly * 100)
+                    percent=math.floor(steps_val / avg_weekly * 100),
+                    date=date_val,
                 ))
 
     # 時間別集計（その日の全データから時間別を集計）
