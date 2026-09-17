@@ -135,6 +135,13 @@ function closeModal() {
     document.getElementById('modalLayer').classList.add('is-hidden');
 }
 
+function openAccountDeleteModal() {
+    document.getElementById('deleteUsername').value = state.teacher?.username || '';
+    document.getElementById('deletePassword').value = '';
+    setMessage('deleteMessage', '');
+    openModal('accountDeleteModal');
+}
+
 function setMessage(id, message) {
     document.getElementById(id).textContent = message;
 }
@@ -189,6 +196,7 @@ document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEv
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
 document.querySelector('[data-action="refresh"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); loadDashboard(); });
+document.querySelector('[data-action="account-delete"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openAccountDeleteModal(); });
 document.querySelector('[data-action="logout"]').addEventListener('click', async () => {
     try { await apiRequest('/api/auth/logout', { method: 'POST' }); } catch (error) { console.error(error); }
     localStorage.removeItem('sukusuteToken'); state.token = null; showLogin();
@@ -230,6 +238,26 @@ document.getElementById('childAssignments').addEventListener('change', async (ev
     });
     await loadClasses();
     await refreshClassList();
+});
+document.getElementById('accountDeleteForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!confirm('アカウントを削除しますか？この操作は取り消せません。')) return;
+    try {
+        await apiRequest('/api/auth/account', {
+            method: 'DELETE',
+            body: JSON.stringify({
+                username: document.getElementById('deleteUsername').value,
+                password: document.getElementById('deletePassword').value
+            })
+        });
+        localStorage.removeItem('sukusuteToken');
+        state.token = null;
+        closeModal();
+        showLogin();
+        setMessage('loginMessage', 'アカウントを削除しました。');
+    } catch (error) {
+        setMessage('deleteMessage', error.message);
+    }
 });
 
 if (state.token) {
