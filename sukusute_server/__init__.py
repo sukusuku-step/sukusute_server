@@ -10,6 +10,7 @@ import secrets
 import typing
 import asyncio
 import csv
+import io
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -330,7 +331,7 @@ async def push_csv(
     if not target_child:
         raise fastapi.HTTPException(404, f"Child {child_id} not found.")
 
-    parsed_csv = list(csv.reader(body.decode(encoding="utf-8")))
+    parsed_csv = list(csv.reader(io.StringIO(body.decode(encoding="utf-8"))))[1:]
     start_time = datetime.datetime.fromisoformat(parsed_csv[0][11])
     for row in parsed_csv:
         timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, start = row
