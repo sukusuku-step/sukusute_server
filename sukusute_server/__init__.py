@@ -9,6 +9,7 @@ import hashlib
 import secrets
 import typing
 import asyncio
+import csv
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -311,16 +312,6 @@ async def push_data(
                 f"Added distance: {target_child.name} -> "
                 f"{other_child.name} = {distance.distance} km"
             )
-
-    # 単独データを処理
-    if data.singledata:
-        dbsession.add(database_models.SingleChildData(
-            child_id=data.child_id,
-            date=data.singledata.date,
-            steps=data.singledata.steps
-        ))
-        logger.info(f"Added steps: {data.child_id} = {data.singledata.steps}")
-
     await dbsession.commit()
     logger.info(
         "[push_data] saved child_id=%s steps=%s distances=%s",
@@ -330,6 +321,31 @@ async def push_data(
     )
     return http_models.Result(status="ok")
 
+@app.post("/api/push_csv/{child_id}")
+async def push_csv(
+        body: typing.Annotated[bytes, fastapi.Body(media_type="text/csv")],
+        child_id: int,
+        dbsession: database_models.SessionDep) -> http_models.Result:
+    target_child = await dbsession.get(database_models.Child, child_id)
+    if not target_child:
+        raise fastapi.HTTPException(404, f"Child {child_id} not found.")
+
+    parsed_csv = list(csv.reader(body.decode(encoding="utf-8")))
+    start_time = datetime.datetime.fromisoformat(parsed_csv[0][11])
+    for row in parsed_csv:
+        timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, start = row
+        calculated_time = start_time + datetime.timedelta(seconds=float(timestamp))
+        dbsession.add(database_models.SingleChildData(
+            child_id=child_id,
+            date=calculated_time,
+            steps=steps,
+            ax=ax, ay=ay, az=az,
+            gx=gx, gy=gy, gz=gz,
+            mx=mx, my=my, mz=mz
+        ))
+        logger.info(f"Received CSV: child_id={child_id}, steps={steps}, date={calculated_time}, ({ax}, {ay}, {az}), ({gx}, {gy}, {gz}), ({mx}, {my}, {mz})")
+    await dbsession.commit()
+    return http_models.Result(status="ok")
 
 # ===== 児童情報取得 =====
 

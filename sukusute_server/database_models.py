@@ -114,9 +114,17 @@ class SingleChildData(Base):
     )
     date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
     steps: Mapped[int] = mapped_column(primary_key=True)
+    ax: Mapped[float]
+    ay: Mapped[float]
+    az: Mapped[float]
+    gx: Mapped[float]
+    gy: Mapped[float]
+    gz: Mapped[float]
+    mx: Mapped[float]
+    my: Mapped[float]
+    mz: Mapped[float]
 
     child: Mapped[Child] = relationship(foreign_keys=child_id)
-
 
 # ===== 児童間距離データモデル =====
 
