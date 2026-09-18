@@ -321,7 +321,7 @@ async def push_data(
     )
     return http_models.Result(status="ok")
 
-@app.post("/api/push_csv/{child_id}")
+@app.post("/api/push_csv/{child_id}", tags=["API"])
 async def push_csv(
         body: typing.Annotated[bytes, fastapi.Body(media_type="text/csv")],
         child_id: int,
