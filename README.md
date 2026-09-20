@@ -92,6 +92,7 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `PATCH` | `/api/children/{child_id}/class` | 所属クラス変更 | 児童を指定クラスへ移動する。class_idをnullにすると未所属に戻す |
 | `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
 | `POST` | `/api/push_data` | 歩数・距離の受信 | 指定児童の歩数や児童間距離をデータベースに保存する |
+| `POST` | `/api/push_csv/{child_id}` | センサーデータCSV受信 | 指定児童の歩数と9軸センサーデータを保存する |
 | `GET` | `/api/children?class_id={class_id}` | 児童一覧 | 登録済み児童を `child_id` 順で返す。class_id指定時はクラスで絞り込む |
 | `GET` | `/api/children/search?name={name}` | 児童検索・登録 | 名前を完全一致で検索し、なければ新規作成する |
 | `GET` | `/api/children/{child_id}` | 児童データ取得 | 児童情報、歩数、距離の全レコードを返す |
@@ -214,6 +215,22 @@ CLIではユーザー名が存在すれば `teacher` テーブルから削除さ
 {"status": "ok", "msg": null}
 ```
 
+#### `POST /api/push_csv/{child_id}`
+
+指定児童のセンサーデータをCSVでまとめて保存します。リクエスト本文はUTF-8のCSVで、1行目をヘッダーとして読み飛ばします。データ行の列順は次のとおりです。
+
+```text
+timestamp,steps,ax,ay,az,gx,gy,gz,mx,my,mz,start
+```
+
+`timestamp` は `start` からの経過秒数です。各行の保存日時は `start + timestamp秒` として計算されます。`ax`〜`az` は加速度、`gx`〜`gz` はジャイロ、`mx`〜`mz` は地磁気の値です。`{child_id}` に対応する児童が存在しない場合は `404` を返します。
+
+成功時:
+
+```json
+{"status": "ok", "msg": null}
+```
+
 ### 児童管理
 
 #### `GET /api/children`
@@ -322,6 +339,11 @@ curl -X POST http://localhost:8000/api/push_data \
   -H "Content-Type: application/json" \
   -d '{"child_id":1,"singledata":{"steps":1234}}'
 
+# センサーデータCSVを送信
+curl -X POST http://localhost:8000/api/push_csv/1 \
+  -H "Content-Type: text/csv" \
+  --data-binary @sensor_data.csv
+
 # 指定日の歩数を取得
 curl "http://localhost:8000/api/children/1/steps?year=2026&month=7&day=15"
 ```
@@ -352,7 +374,7 @@ uv run python delete_children.py delete <child_id>
 ## データモデル
 
 - `child`: `child_id`、名前、`device_id`
-- `child_data`: 児童ごとの日時別歩数。受信した値は累積歩数として扱う
+- `child_data`: 児童ごとの日時別歩数と、加速度・ジャイロ・地磁気の9軸センサーデータ。受信した歩数は累積歩数として扱う
 - `child_distance`: 児童ペア、距離、日時。児童IDは小さい順で保存する
 
 ## プロジェクト構造
