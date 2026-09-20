@@ -114,6 +114,7 @@ class SingleChildData(Base):
     )
     date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
     steps: Mapped[int] = mapped_column(primary_key=True)
+    # 加速度(ax-ay-az)、ジャイロ(gx-gy-gz)、地磁気(mx-my-mz)の9軸データ。
     ax: Mapped[float]
     ay: Mapped[float]
     az: Mapped[float]

@@ -322,15 +322,19 @@ async def push_data(
     )
     return http_models.Result(status="ok")
 
+# ===== センサーデータCSV受信 =====
+
 @app.post("/api/push_csv/{child_id}", tags=["API"])
 async def push_csv(
         body: typing.Annotated[bytes, fastapi.Body(media_type="text/csv")],
         child_id: int,
         dbsession: database_models.SessionDep) -> http_models.Result:
+    """歩数と9軸センサーデータをCSVから読み込み、児童の記録として保存する。"""
     target_child = await dbsession.get(database_models.Child, child_id)
     if not target_child:
         raise fastapi.HTTPException(404, f"Child {child_id} not found.")
 
+    # CSVの先頭行はヘッダーで、各行のtimestampは開始日時からの経過秒数。
     parsed_csv = list(csv.reader(io.StringIO(body.decode(encoding="utf-8"))))[1:]
     start_time = datetime.datetime.fromisoformat(parsed_csv[0][11])
     for row in parsed_csv:
