@@ -9,10 +9,11 @@ import pathlib
 import uuid
 
 import fastapi
-from sqlalchemy import ForeignKey, CheckConstraint, select, SQLColumnExpression, or_
+from sqlalchemy import ForeignKey, CheckConstraint, Tuple, select, SQLColumnExpression, or_
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, relationship, mapped_column
+from sqlalchemy.sql.expression import tuple_
 
 # プロジェクトルートのDBを常に参照する。起動ディレクトリに依存させない。
 DATABASE_PATH = pathlib.Path(__file__).resolve().parent.parent / "data.sqlite"
@@ -155,7 +156,7 @@ class ChildDistanceData(Base):
     child_2: Mapped[Child] = relationship(foreign_keys=child_id_2)
 
     @hybrid_property
-    def children(self) -> tuple[Child]:
+    def children(self) -> tuple[Child, Child]:
         """ 両児童のタプルを返す """
         return (self.child_1, self.child_2)
 
@@ -165,17 +166,20 @@ class ChildDistanceData(Base):
         self.child_1 = min(value, key=lambda i: i.child_id)
         self.child_2 = max(value, key=lambda i: i.child_id)
 
-    @children.inplace.expression
-    @classmethod
-    def _radius_expression(cls) -> SQLColumnExpression[tuple[Child]]:
-        """SQLAlchemy式として距離レコードの両端児童を参照する。"""
-        return select(Child) \
-            .where(or_(
-                Child.child_id == cls.child_1,
-                Child.child_id == cls.child_2
-            )) \
-            .label("children")
+    @hybrid_property
+    def children_ids(self) -> tuple[int, int]:
+        """ 両児童のchild_idのタプルを返す。 """
+        return (self.child_id_1, self.child_id_2)
 
+    @children_ids.inplace.setter
+    def _children_ids_setter(self, value: collections.abc.Iterable[int]) -> None:
+        self.child_id_1 = min(value)
+        self.child_id_2 = max(value)
+
+    @children_ids.inplace.expression
+    @classmethod
+    def _children_ids_radius_expression(cls) -> Tuple:
+        return tuple_(cls.child_id_1, cls.child_id_2)
 
 # ===== 教師モデル =====
 
