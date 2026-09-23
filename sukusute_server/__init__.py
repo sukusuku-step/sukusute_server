@@ -286,9 +286,10 @@ async def push_csv(
         raise fastapi.HTTPException(404, f"Child {child_id} not found.")
 
     # CSVの先頭行はヘッダーで、各行のtimestampは開始日時からの経過秒数。
-    parsed_csv = list(csv.reader(io.StringIO(body.decode(encoding="utf-8"))))[1:]
-    _, _, _, _, _, _, _, _, _, _, _, start_time_iso, *distance_children = parsed_csv[0]
-    start_time = datetime.datetime.fromisoformat(start_time_iso)
+    parsed_csv = list(csv.reader(io.StringIO(body.decode(encoding="utf-8"))))
+    _, _, _, _, _, _, _, _, _, _, _, _, *distance_children = parsed_csv[0]
+    del parsed_csv[0]
+    start_time = datetime.datetime.fromisoformat(parsed_csv[0][11])
     parsed_distance_children: list[int] = []
     for child in distance_children:
         parsed_distance_children.append(int(child[9:]))
@@ -305,7 +306,7 @@ async def push_csv(
         ))
         for i, distance in enumerate(distances):
             distance_obj = database_models.ChildDistanceData(
-                children=(child_id, parsed_distance_children[i]),
+                date=calculated_time,
                 distance=float(distance)
             )
             distance_obj.children_ids = (child_id, parsed_distance_children[i])
