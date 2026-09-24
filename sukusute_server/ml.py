@@ -36,7 +36,10 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         record.gx, record.gy, record.gz,
         record.mx, record.my, record.mz
     ) for record in single_records), dtype=np.float32)
-    baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(baseline_input)["features"]
+    try:
+        baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(baseline_input)["features"]
+    except (ValueError, TypeError):
+        baseline_result = None
 
     dbsession.add(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory(
         date=datetime.datetime.now(),
@@ -46,16 +49,16 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         behavior_pedo_confidence=behavior_result["pedo_confidence"],
         activity=activity_result["activity_level"],
         activity_confidence=activity_result["activity_confidence"],
-        baseline_steps_10min_median=baseline_result["steps_10min"]["median"],
-        baseline_steps_10min_mad_scale=baseline_result["steps_10min"]["mad_scale"],
-        baseline_activity_mean_proxy_median=baseline_result["activity_mean_proxy"]["median"],
-        baseline_activity_mean_proxy_mad_scale=baseline_result["activity_mean_proxy"]["mad_scale"],
-        baseline_acc_std_median=baseline_result["acc_std"]["median"],
-        baseline_acc_std_mad_scale=baseline_result["acc_std"]["mad_scale"],
-        baseline_gyro_mean_median=baseline_result["gyro_mean"]["median"],
-        baseline_gyro_mean_mad_scale=baseline_result["gyro_mean"]["mad_scale"],
-        baseline_mag_mean_median=baseline_result["mag_mean"]["median"],
-        baseline_mag_mean_mad_scale=baseline_result["mag_mean"]["mad_scale"]
+        baseline_steps_10min_median=baseline_result["steps_10min"]["median"] if baseline_result else None,
+        baseline_steps_10min_mad_scale=baseline_result["steps_10min"]["mad_scale"] if baseline_result else None,
+        baseline_activity_mean_proxy_median=baseline_result["activity_mean_proxy"]["median"] if baseline_result else None,
+        baseline_activity_mean_proxy_mad_scale=baseline_result["activity_mean_proxy"]["mad_scale"] if baseline_result else None,
+        baseline_acc_std_median=baseline_result["acc_std"]["median"] if baseline_result else None,
+        baseline_acc_std_mad_scale=baseline_result["acc_std"]["mad_scale"] if baseline_result else None,
+        baseline_gyro_mean_median=baseline_result["gyro_mean"]["median"] if baseline_result else None,
+        baseline_gyro_mean_mad_scale=baseline_result["gyro_mean"]["mad_scale"] if baseline_result else None,
+        baseline_mag_mean_median=baseline_result["mag_mean"]["median"] if baseline_result else None,
+        baseline_mag_mean_mad_scale=baseline_result["mag_mean"]["mad_scale"] if baseline_result else None
     ))
 
     distance_stmt = select(sukusute_server.database_models.ChildDistanceData) \
