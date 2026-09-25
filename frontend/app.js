@@ -5,7 +5,9 @@ const state = {
     selectedClassId: null,
     children: [],
     steps: {},
-    selectedDate: new Date()
+    selectedDate: new Date(),
+    // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
+    teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
 };
 
 // 画面表示に使う歩数ルール。カードと警告で同じ基準を使う。
@@ -15,6 +17,61 @@ const NORMAL_INCREASE_PERCENT = 20;
 
 let refreshTimer = null;
 let refreshInProgress = false;
+// 児童ごとのスロット風アニメーションの進行状況（連続更新時に前回分を打ち切るために使う）。
+const stepAnimationState = new Map();
+
+// 端末が先生用としてチェックされているかどうかを判定する。
+function isTeacherFlag(childId) {
+    return state.teacherFlags.has(childId);
+}
+
+// 先生フラグを切り替え、ブラウザへ保存する（表示専用でサーバーへは送らない）。
+function setTeacherFlag(childId, isTeacher) {
+    if (isTeacher) state.teacherFlags.add(childId); else state.teacherFlags.delete(childId);
+    localStorage.setItem('sukusuteTeacherFlags', JSON.stringify([...state.teacherFlags]));
+}
+
+// 歩数が増えたことがひと目でわかるよう、スロットのように数字を回してから確定値へ着地させる。
+function animateStepValue(element, childId, targetValue) {
+    const previous = stepAnimationState.get(childId);
+    if (previous && previous.raf) cancelAnimationFrame(previous.raf);
+    if (!previous) {
+        element.textContent = targetValue.toLocaleString();
+        stepAnimationState.set(childId, { raf: null, lastValue: targetValue });
+        return;
+    }
+    const startValue = previous.lastValue;
+    if (startValue === targetValue) {
+        element.textContent = targetValue.toLocaleString();
+        stepAnimationState.set(childId, { raf: null, lastValue: targetValue });
+        return;
+    }
+    const duration = 2200;
+    const direction = targetValue > startValue ? 1 : -1;
+    const startTime = performance.now();
+    element.classList.add('step-spin');
+    let displayValue = startValue;
+    const step = (now) => {
+        const progress = Math.min((now - startTime) / duration, 1);
+        // 現在の数字から目標値へ向けて、少しずつ増減しながらくるくる回っているように見せる
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const easedTarget = startValue + (targetValue - startValue) * eased;
+        const jitter = Math.random() * Math.abs(targetValue - startValue) * 0.1 * direction;
+        if (progress < 1) {
+            displayValue = direction > 0
+                ? Math.min(targetValue, Math.max(displayValue, Math.round(easedTarget + Math.max(jitter, 0))))
+                : Math.max(targetValue, Math.min(displayValue, Math.round(easedTarget + Math.min(jitter, 0))));
+            element.textContent = displayValue.toLocaleString();
+            const raf = requestAnimationFrame(step);
+            stepAnimationState.set(childId, { raf, lastValue: startValue });
+        } else {
+            element.textContent = targetValue.toLocaleString();
+            element.classList.remove('step-spin');
+            stepAnimationState.set(childId, { raf: null, lastValue: targetValue });
+        }
+    };
+    requestAnimationFrame(step);
+}
 
 // ===== API通信と認証状態 =====
 
@@ -119,7 +176,7 @@ async function loadDashboard() {
     }
 }
 
-// 児童を歩数順に並べ、歩数カードをHTMLへ描画する。
+// 児童を歩数順に並べ、歩数カードをHTMLへ描画する。カードはDOMを使い回し、歩数だけスロット風に更新する。
 function renderStudents() {
     const grid = document.getElementById('studentGrid');
     if (!state.children.length) {
@@ -127,17 +184,35 @@ function renderStudents() {
         return;
     }
     const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
-    grid.innerHTML = sorted.map((child) => {
+    const visibleIds = new Set(sorted.map((child) => child.child_id));
+    grid.querySelectorAll('[data-student-card]').forEach((card) => {
+        if (!visibleIds.has(Number(card.dataset.studentCard))) card.remove();
+    });
+    sorted.forEach((child, index) => {
         const steps = state.steps[child.child_id] || 0;
         const warning = steps > 0 && steps < STEP_WARNING_THRESHOLD;
-        return `<article class="student-card">
-            <div class="student-name">${escapeHtml(child.name || `児童${child.child_id}`)}</div>
-            <div class="student-steps">歩数：<strong>${steps.toLocaleString()}</strong></div>
-            <div class="student-status ${warning ? 'warning' : 'normal'}">
-                ${warning ? `活動量が<strong>${WARNING_DECREASE_PERCENT}%</strong>低下` : `通常の活動量より${NORMAL_INCREASE_PERCENT}%増加`}
-            </div>
-        </article>`;
-    }).join('');
+        const isTeacher = isTeacherFlag(child.child_id);
+        const nameHtml = `${escapeHtml(child.name || `児童${child.child_id}`)}${isTeacher ? '<span class="teacher-badge" title="先生の端末">🧑\u200d🏫 先生</span>' : ''}`;
+        const statusHtml = warning
+            ? `活動量が<strong>${WARNING_DECREASE_PERCENT}%</strong>低下`
+            : `通常の活動量より${NORMAL_INCREASE_PERCENT}%増加`;
+        let card = grid.querySelector(`[data-student-card="${child.child_id}"]`);
+        if (!card) {
+            card = document.createElement('article');
+            card.className = 'student-card';
+            card.dataset.studentCard = String(child.child_id);
+            card.innerHTML = `
+                <div class="student-name"></div>
+                <div class="student-steps">歩数：<strong class="step-number"></strong></div>
+                <div class="student-status"></div>`;
+        }
+        card.querySelector('.student-name').innerHTML = nameHtml;
+        card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
+        card.querySelector('.student-status').innerHTML = statusHtml;
+        const referenceNode = grid.children[index];
+        if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
+        animateStepValue(card.querySelector('.step-number'), child.child_id, steps);
+    });
 }
 
 // 現在表示中の児童から歩数上位5名をランキングへ描画する。
@@ -209,6 +284,40 @@ async function openRelationModal() {
         ? state.children.map((child) => `<span class="relation-node">${escapeHtml(child.name)}</span>`).join('<span aria-hidden="true">↔</span>')
         : '<span>児童データがありません</span>';
     openModal('relationModal');
+}
+
+// 生徒管理情報を取得してから、生徒管理モーダルを開く。
+async function openStudentManageModal() {
+    try {
+        await refreshStudentManageList();
+        setMessage('studentManageMessage', '');
+        openModal('studentManageModal');
+    } catch (error) {
+        setMessage('studentManageMessage', error.message);
+    }
+}
+
+// 全児童のクラス割り振りと先生チェックを生徒管理モーダルへ描画する。
+async function refreshStudentManageList() {
+    const [childrenResult, classesResult] = await Promise.all([
+        apiRequest('/api/children'),
+        apiRequest('/api/classes')
+    ]);
+    const classes = classesResult.classes || [];
+    document.getElementById('studentManageList').innerHTML = (childrenResult.children || []).map((child) => {
+        const isTeacher = isTeacherFlag(child.child_id);
+        return `<div class="student-manage-row ${isTeacher ? 'is-teacher' : ''}" data-manage-row="${child.child_id}">
+            <span class="student-manage-name">${escapeHtml(child.name)}${isTeacher ? '<span class="teacher-badge" title="先生の端末">🧑‍🏫 先生</span>' : ''}</span>
+            <select data-manage-class="${child.child_id}">
+                <option value="">未所属</option>
+                ${classes.map((item) => `<option value="${item.class_id}" ${item.class_id === child.class_id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
+            </select>
+            <label class="teacher-checkbox">
+                <input type="checkbox" data-manage-teacher="${child.child_id}" ${isTeacher ? 'checked' : ''}>
+                先生
+            </label>
+        </div>`;
+    }).join('');
 }
 
 // 指定したモーダルだけを表示する。
@@ -291,6 +400,7 @@ document.getElementById('closeMenuButton').addEventListener('click', () => docum
 document.getElementById('openClassButton').addEventListener('click', () => { openClassModal(); });
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
+document.querySelector('[data-action="student-manage"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openStudentManageModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
 document.querySelector('[data-action="refresh"]').addEventListener('click', () => {
     document.getElementById('menuPanel').classList.remove('is-open');
@@ -343,6 +453,27 @@ document.getElementById('childAssignments').addEventListener('change', async (ev
     });
     await loadClasses();
     await refreshClassList();
+});
+document.getElementById('studentManageList').addEventListener('change', async (event) => {
+    const select = event.target.closest('[data-manage-class]');
+    if (select) {
+        try {
+            await apiRequest(`/api/children/${select.dataset.manageClass}/class`, {
+                method: 'PATCH', body: JSON.stringify({ class_id: Number(select.value) || null })
+            });
+            await loadClasses();
+        } catch (error) {
+            setMessage('studentManageMessage', error.message);
+        }
+        return;
+    }
+    const checkbox = event.target.closest('[data-manage-teacher]');
+    if (checkbox) {
+        const childId = Number(checkbox.dataset.manageTeacher);
+        setTeacherFlag(childId, checkbox.checked);
+        await refreshStudentManageList();
+        renderStudents();
+    }
 });
 document.getElementById('accountDeleteForm').addEventListener('submit', async (event) => {
     event.preventDefault();
