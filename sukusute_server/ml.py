@@ -11,7 +11,8 @@ import sukusute_machine_learning.utils.relatedness
 import sukusute_server.database_models
 
 async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
-                        child_id: int):
+                        child_id: int,
+                        distance_child_ids: list[int]) -> None:
     single_stmt = select(sukusute_server.database_models.SingleChildData) \
                     .where(
                         sukusute_server.database_models.SingleChildData.child_id == child_id,
@@ -26,7 +27,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         record.ax, record.ay, record.az,
         record.gx, record.gy, record.gz,
         record.mx, record.my, record.mz
-    ) for record in single_records_10min), dtype=np.float32)
+    ) for record in single_records_10min), dtype=(np.float32, 10))
     behavior_result = sukusute_machine_learning.inference.predict_behavior.behavior_infer(behavior_input)
     activity_result = sukusute_machine_learning.inference.predict_behavior.activity_infer(behavior_input)
     
@@ -35,17 +36,18 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         record.ax, record.ay, record.az,
         record.gx, record.gy, record.gz,
         record.mx, record.my, record.mz
-    ) for record in single_records), dtype=np.float32)
+    ) for record in single_records), dtype=(np.float32, 10))
     try:
         baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(baseline_input)["features"]
     except (ValueError, TypeError):
         baseline_result = None
 
     dbsession.add(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory(
+        child_id=child_id,
         date=datetime.datetime.now(),
-        behavior_acce=sukusute_server.database_models.ChildBehaviorEvaluationEnum(behavior_result["acce_label"]),
+        behavior_acce=sukusute_server.database_models.ChildBehaviorAcceEnum(behavior_result["acce_label"]),
         behavior_acce_confidence=behavior_result["acce_confidence"],
-        behavior_pedo=sukusute_server.database_models.ChildBehaviorEvaluationEnum(behavior_result["pedo_label"]),
+        behavior_pedo=sukusute_server.database_models.ChildBehaviorPedoEnum(behavior_result["pedo_label"]),
         behavior_pedo_confidence=behavior_result["pedo_confidence"],
         activity=activity_result["activity_level"],
         activity_confidence=activity_result["activity_confidence"],
@@ -68,27 +70,34 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         )) \
         .order_by(sukusute_server.database_models.ChildDistanceData.date.asc())
     distance_records = (await dbsession.execute(distance_stmt)).scalars().all()
-    distance_records_10min = [record for record in distance_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=10)][:6000]
-    if len(distance_records_10min) < 6000:
-        return
-    distance_input = np.fromiter((record.distance for record in distance_records_10min), dtype=np.float32)
-    distance_result = sukusute_machine_learning.inference.predict_distance.distance_infer(distance_input)
+    distance_records_10min = [record for record in distance_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=10)]
+    for other_child_id in distance_child_ids:
+        if child_id > other_child_id:
+            child_distance_records_10min = [record for record in distance_records_10min if record.child_id_1 == other_child_id][:6000]
+        else:
+            child_distance_records_10min = [record for record in distance_records_10min if record.child_id_2 == other_child_id][:6000]
+        if len(child_distance_records_10min) < 6000:
+            return
+        distance_input = np.fromiter((record.distance for record in child_distance_records_10min), dtype=np.float32)
+        distance_result = sukusute_machine_learning.inference.predict_distance.distance_infer(distance_input)
 
-    distance_evalhist_stmt = select(sukusute_server.database_models.ChildDistanceEvaluationHistory) \
-        .where(or_(
-            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == child_id,
-            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == child_id,
-        )) \
-        .order_by(sukusute_server.database_models.ChildDistanceEvaluationHistory.date.asc())
-    distance_evalhist_records = (await dbsession.execute(distance_evalhist_stmt)).scalars().all()
-    relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(
-        record.evaluated for record in distance_evalhist_records
-    )
-    dbsession.add(sukusute_server.database_models.ChildDistanceEvaluationHistory(
-        date=datetime.datetime.now(),
-        evaluated=sukusute_server.database_models.ChildDistanceEvaluationEnum(distance_result["label"]),
-        confidence=distance_result["confidence"],
-        score=relatedness_result
-    ))
+        distance_evalhist_stmt = select(sukusute_server.database_models.ChildDistanceEvaluationHistory) \
+            .where(and_(
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == min((child_id, other_child_id)),
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == max((child_id, other_child_id)),
+            )) \
+            .order_by(sukusute_server.database_models.ChildDistanceEvaluationHistory.date.asc())
+        distance_evalhist_records = (await dbsession.execute(distance_evalhist_stmt)).scalars().all()
+        relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(
+            record.evaluated for record in distance_evalhist_records
+        )
+        dbsession.add(sukusute_server.database_models.ChildDistanceEvaluationHistory(
+            child_id_1=min((child_id, other_child_id)),
+            child_id_2=max((child_id, other_child_id)),
+            date=datetime.datetime.now(),
+            evaluated=sukusute_server.database_models.ChildDistanceEvaluationEnum(distance_result["label"]),
+            confidence=distance_result["confidence"],
+            score=relatedness_result
+        ))
     await dbsession.commit()
 

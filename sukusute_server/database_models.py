@@ -212,10 +212,13 @@ class ChildDistanceEvaluationHistory(HasTwoChildRelations, Base):
     confidence: Mapped[float]
     score: Mapped[float]
 
-class ChildBehaviorEvaluationEnum(enum.Enum):
-    ACTIVE = "元気 (active)"
-    INACTIVE = "おとなしい (inactive)"
-    UNKNOWN = "不明 (unknown)"
+class ChildBehaviorPedoEnum(enum.Enum):
+    SLOW = "歩行（ゆっくり）"
+    NORMAL = "歩行（通常速度）"
+    STOP = "静止"
+class ChildBehaviorAcceEnum(enum.Enum):
+    SITTING = "座り状態"
+    STANDING = "立ち状態"
 
 class ChildBehaviorDataEvaluationHistory(Base):
     __tablename__ = "behaivor_evalhist"
@@ -224,10 +227,10 @@ class ChildBehaviorDataEvaluationHistory(Base):
         ForeignKey("child.child_id"),
         primary_key=True
     )
-    date: Mapped[datetime.datetime]
-    behavior_acce: Mapped[ChildBehaviorEvaluationEnum]
+    date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
+    behavior_acce: Mapped[ChildBehaviorAcceEnum]
     behavior_acce_confidence: Mapped[float]
-    behavior_pedo: Mapped[ChildBehaviorEvaluationEnum]
+    behavior_pedo: Mapped[ChildBehaviorPedoEnum]
     behavior_pedo_confidence: Mapped[float]
     activity: Mapped[int]
     activity_confidence: Mapped[float]

@@ -316,7 +316,7 @@ async def push_csv(
     await dbsession.commit()
 
     # 機械学習のタスクを作成する
-    background_tasks.add_task(ml.evaluate_data, dbsession, child_id)
+    background_tasks.add_task(ml.evaluate_data, dbsession, child_id, parsed_distance_children)
 
     return http_models.Result(status="ok")
 
