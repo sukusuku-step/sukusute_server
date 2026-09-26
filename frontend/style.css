@@ -181,14 +181,14 @@ body {
 
 .student-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, 180px);
+    grid-template-columns: repeat(auto-fill, 220px);
     gap: 14px 8px;
     align-content: start;
 }
 
 .student-card {
-    width: 180px;
-    height: 180px;
+    width: 220px;
+    height: 220px;
     aspect-ratio: 1 / 1;
     display: flex;
     flex-direction: column;
@@ -229,6 +229,13 @@ body {
     font-size: 16px;
 }
 
+.nearest-person {
+    max-width: 100%;
+    color: #c3c8ca;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
 .device-status {
     display: flex;
     flex-direction: column;
@@ -238,6 +245,21 @@ body {
     color: #c3c8ca;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
+}
+
+.device-warning {
+    display: inline-grid;
+    width: 15px;
+    height: 15px;
+    margin-left: 4px;
+    place-items: center;
+    border-radius: 50%;
+    background: #ffd43b;
+    color: #111;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    vertical-align: middle;
 }
 
 .wifi-status {
