@@ -81,7 +81,18 @@ async function apiRequest(url, options = {}) {
     const headers = { ...(options.headers || {}) };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     if (options.body) headers['Content-Type'] = 'application/json';
-    const response = await fetch(url, { ...options, headers });
+    // APIの応答が止まって画面の更新全体が待ち続けないようにする。
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let response;
+    try {
+        response = await fetch(url, { ...options, headers, signal: controller.signal });
+    } catch (error) {
+        if (controller.signal.aborted) throw new Error(`API応答がタイムアウトしました: ${url}`);
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
     const body = await response.json().catch(() => ({}));
     if (response.status === 401 && state.token) {
         localStorage.removeItem('sukusuteToken');
@@ -158,24 +169,38 @@ async function loadDashboard() {
     try {
         const children = await apiRequest(`/api/children${classQuery}`);
         state.children = children.children || [];
-        const [stats, deviceStatuses] = await Promise.all([
-            apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`),
-            apiRequest('/api/device_status')
-        ]);
-        state.deviceStatuses = Object.fromEntries(
-            (deviceStatuses.devices || []).map((item) => [item.child_id, item])
-        );
-        state.steps = {};
-        for (const item of stats.student_ranking || []) state.steps[item.child_id] = item.steps || 0;
+        // 歩数や端末状態のAPIを待たず、DBの児童一覧を先に表示する。
         renderStudents();
         renderRanking();
-        renderWarnings(stats.warnings || []);
+        // 歩数と端末状態は、取得できた方から独立して画面へ反映する。
+        const refreshResults = await Promise.allSettled([
+            apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`).then((stats) => {
+                state.steps = Object.fromEntries(
+                    (stats.student_ranking || []).map((item) => [item.child_id, item.steps || 0])
+                );
+                renderStudents();
+                renderRanking();
+                renderWarnings(stats.warnings || []);
+            }),
+            apiRequest('/api/device_status').then((deviceStatuses) => {
+                state.deviceStatuses = Object.fromEntries(
+                    (deviceStatuses.devices || []).map((item) => [item.child_id, item])
+                );
+                renderStudents();
+            })
+        ]);
+        const failedRefresh = refreshResults.find((result) => result.status === 'rejected');
+        if (failedRefresh) throw failedRefresh.reason;
         setMessage('refreshMessage', `最終更新 ${new Date().toLocaleTimeString()}`);
         console.info('[ui] dashboard refresh completed', {
             children: state.children.length,
             steps: Object.keys(state.steps).length
         });
     } catch (error) {
+        if (!state.children.length) {
+            document.getElementById('studentGrid').innerHTML =
+                `<div class="loading">児童データを取得できませんでした: ${escapeHtml(error.message)}</div>`;
+        }
         setMessage('refreshMessage', error.message);
         console.error('[ui] dashboard refresh failed', error);
     } finally {
@@ -183,20 +208,38 @@ async function loadDashboard() {
     }
 }
 
+// RSSIを携帯電話のアンテナ表示に合わせて4段階に変換する。
+function getWifiSignalLevel(wifiRssi) {
+    if (wifiRssi >= -55) return 4;
+    if (wifiRssi >= -67) return 3;
+    if (wifiRssi >= -75) return 2;
+    if (wifiRssi >= -85) return 1;
+    return 0;
+}
+
 // 児童を歩数順に並べ、歩数カードをHTMLへ描画する。カードはDOMを使い回し、歩数だけスロット風に更新する。
 function renderStudents() {
-        const deviceStatus = state.deviceStatuses[child.child_id];
     const grid = document.getElementById('studentGrid');
     if (!state.children.length) {
         grid.innerHTML = '<div class="loading">このクラスに児童データがありません</div>';
         return;
     }
+    grid.querySelector('.loading')?.remove();
     const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
     const visibleIds = new Set(sorted.map((child) => child.child_id));
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         if (!visibleIds.has(Number(card.dataset.studentCard))) card.remove();
     });
     sorted.forEach((child, index) => {
+        const deviceStatus = state.deviceStatuses[child.child_id];
+        const wifiSignalLevel = deviceStatus ? getWifiSignalLevel(deviceStatus.wifi_rssi) : 0;
+        const wifiRssiLabel = deviceStatus ? `${deviceStatus.wifi_rssi} dBm` : 'N/A';
+        const wifiDescription = deviceStatus
+            ? `Wi-Fi電波強度 ${wifiSignalLevel}/4、${wifiRssiLabel}`
+            : 'Wi-Fi電波強度 N/A';
+        const wifiBars = [1, 2, 3, 4].map((barNumber) =>
+            `<span class="wifi-signal-bar${barNumber <= wifiSignalLevel ? ' is-active' : ''}"></span>`
+        ).join('');
         const steps = state.steps[child.child_id] || 0;
         const warning = steps > 0 && steps < STEP_WARNING_THRESHOLD;
         const isTeacher = isTeacherFlag(child.child_id);
@@ -215,10 +258,14 @@ function renderStudents() {
                 <div class="device-status"></div>
                 <div class="student-status"></div>`;
         }
+        card.classList.toggle('has-telemetry', Boolean(deviceStatus));
         card.querySelector('.student-name').innerHTML = nameHtml;
-        card.querySelector('.device-status').textContent = deviceStatus
-            ? `バッテリー ${deviceStatus.battery}% ・ WiFi ${deviceStatus.wifi_rssi} dBm`
-            : '端末情報 未受信';
+        card.querySelector('.device-status').innerHTML = `
+            <span>BAT : ${deviceStatus ? `${deviceStatus.battery}%` : 'N/A'}</span>
+            <span class="wifi-status" role="img" aria-label="${wifiDescription}" title="${wifiDescription}">
+                <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
+                <span>Wi-Fi ${wifiRssiLabel}</span>
+            </span>`;
         card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
         card.querySelector('.student-status').innerHTML = statusHtml;
         const referenceNode = grid.children[index];
