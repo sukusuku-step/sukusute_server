@@ -18,9 +18,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
+import sqlalchemy.sql.functions
 from sqlalchemy import or_
 
-from sukusute_server import http_models, database_models
+from sukusute_server import http_models, database_models, ml
 
 logger = logging.getLogger(__name__)
 
@@ -279,7 +280,8 @@ def health() -> http_models.Result:
 async def push_csv(
         body: typing.Annotated[bytes, fastapi.Body(media_type="text/csv")],
         child_id: int,
-        dbsession: database_models.SessionDep) -> http_models.Result:
+        dbsession: database_models.SessionDep,
+        background_tasks: fastapi.BackgroundTasks) -> http_models.Result:
     """歩数と9軸センサーデータをCSVから読み込み、児童の記録として保存する。"""
     target_child = await dbsession.get(database_models.Child, child_id)
     if not target_child:
@@ -312,6 +314,10 @@ async def push_csv(
             distance_obj.children_ids = (child_id, parsed_distance_children[i])
             dbsession.add(distance_obj)
     await dbsession.commit()
+
+    # 機械学習のタスクを作成する
+    background_tasks.add_task(ml.evaluate_data, dbsession, child_id, parsed_distance_children)
+
     return http_models.Result(status="ok")
 
 # ===== 児童情報取得 =====

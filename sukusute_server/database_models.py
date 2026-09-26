@@ -2,17 +2,18 @@
 from __future__ import annotations
 
 import datetime
+import enum
 import typing
-import collections.abc
 import itertools
 import pathlib
 import uuid
+import collections.abc
 
 import fastapi
 from sqlalchemy import ForeignKey, CheckConstraint, Tuple, select, SQLColumnExpression, or_
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import DeclarativeBase, Mapped, relationship, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, relationship, mapped_column
 from sqlalchemy.sql.expression import tuple_
 
 # プロジェクトルートのDBを常に参照する。起動ディレクトリに依存させない。
@@ -129,31 +130,32 @@ class SingleChildData(Base):
     child: Mapped[Child] = relationship(foreign_keys=child_id)
 
 # ===== 児童間距離データモデル =====
-
-class ChildDistanceData(Base):
-    """ 子ども同士の距離データを蓄積する
-    
-    注意: child_id_1 < child_id_2 となるように制約を設定する。
-    送信方向に依存せず、同じ児童ペアを一意に扱うための並び順。
-    """
-    __tablename__ = "child_distance"
+class HasTwoChildRelations():
     __table_args__ = (
         CheckConstraint("child_id_1 < child_id_2", name="child_id_order"),
     )
+    @declared_attr
+    def child_id_1(cls) -> Mapped[int]:
+        return mapped_column(
+            ForeignKey("child.child_id"),
+            primary_key=True
+        )
+    @declared_attr
+    def child_id_2(cls) -> Mapped[int]:
+        return mapped_column(
+            ForeignKey("child.child_id"),
+            primary_key=True
+        )
 
-    child_id_1: Mapped[int] = mapped_column(
-        ForeignKey("child.child_id"),
-        primary_key=True
-    )
-    child_id_2: Mapped[int] = mapped_column(
-        ForeignKey("child.child_id"),
-        primary_key=True
-    )
-    distance: Mapped[float]
-    date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
+    @declared_attr
+    def child_1(cls) -> Mapped[Child]:
+        cls_ = typing.cast(type, cls)
+        return relationship(foreign_keys=f"{cls_.__name__}.child_id_1")
 
-    child_1: Mapped[Child] = relationship(foreign_keys=child_id_1)
-    child_2: Mapped[Child] = relationship(foreign_keys=child_id_2)
+    @declared_attr
+    def child_2(cls) -> Mapped[Child]:
+        cls_ = typing.cast(type, cls)
+        return relationship(foreign_keys=f"{cls_.__name__}.child_id_2")
 
     @hybrid_property
     def children(self) -> tuple[Child, Child]:
@@ -180,6 +182,71 @@ class ChildDistanceData(Base):
     @classmethod
     def _children_ids_radius_expression(cls) -> Tuple:
         return tuple_(cls.child_id_1, cls.child_id_2)
+
+
+class ChildDistanceData(HasTwoChildRelations, Base):
+    """ 子ども同士の距離データを蓄積する
+    
+    注意: child_id_1 < child_id_2 となるように制約を設定する。
+    送信方向に依存せず、同じ児童ペアを一意に扱うための並び順。
+    """
+    __tablename__ = "child_distance"
+
+    distance: Mapped[float]
+    date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
+
+# ===== 評価結果の保存 =====
+
+class ChildDistanceEvaluationEnum(enum.Enum):
+    """ 相対距離の評価結果 """
+    NA = "測定値なし/タイムアウト"
+    ALONE = "一人"
+    SAME_BEHAVIOR = "接近（同じ部屋）"
+    SAME_ROOM = "接近（同じ行動）"
+
+class ChildDistanceEvaluationHistory(HasTwoChildRelations, Base):
+    """ 相対距離についての推論結果の履歴を保存するテーブル """
+    __tablename__ = "child_distance_evalhist"
+    date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
+    evaluated: Mapped[ChildDistanceEvaluationEnum]
+    confidence: Mapped[float]
+    score: Mapped[float]
+
+class ChildBehaviorPedoEnum(enum.Enum):
+    SLOW = "歩行（ゆっくり）"
+    NORMAL = "歩行（通常速度）"
+    STOP = "静止"
+class ChildBehaviorAcceEnum(enum.Enum):
+    SITTING = "座り状態"
+    STANDING = "立ち状態"
+
+class ChildBehaviorDataEvaluationHistory(Base):
+    __tablename__ = "behaivor_evalhist"
+
+    child_id: Mapped[int] = mapped_column(
+        ForeignKey("child.child_id"),
+        primary_key=True
+    )
+    date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
+    behavior_acce: Mapped[ChildBehaviorAcceEnum]
+    behavior_acce_confidence: Mapped[float]
+    behavior_pedo: Mapped[ChildBehaviorPedoEnum]
+    behavior_pedo_confidence: Mapped[float]
+    activity: Mapped[int]
+    activity_confidence: Mapped[float]
+
+    baseline_steps_10min_median: Mapped[typing.Optional[float]]
+    baseline_steps_10min_mad_scale: Mapped[typing.Optional[float]]
+    baseline_activity_mean_proxy_median: Mapped[typing.Optional[float]]
+    baseline_activity_mean_proxy_mad_scale: Mapped[typing.Optional[float]]
+    baseline_acc_std_median: Mapped[typing.Optional[float]]
+    baseline_acc_std_mad_scale: Mapped[typing.Optional[float]]
+    baseline_gyro_mean_median: Mapped[typing.Optional[float]]
+    baseline_gyro_mean_mad_scale: Mapped[typing.Optional[float]]
+    baseline_mag_mean_median: Mapped[typing.Optional[float]]
+    baseline_mag_mean_mad_scale: Mapped[typing.Optional[float]]
+
+    child: Mapped[Child] = relationship(foreign_keys=child_id)
 
 # ===== 教師モデル =====
 
