@@ -220,6 +220,37 @@ body {
     font-size: 16px;
 }
 
+.step-number {
+    display: inline-block;
+    font-variant-numeric: tabular-nums;
+}
+
+.step-number.step-spin {
+    color: #1c8f3a;
+    animation: step-spin-shake .08s linear infinite;
+}
+
+@keyframes step-spin-shake {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-1px); }
+    100% { transform: translateY(0); }
+}
+
+.teacher-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border: 1px solid #7a4a13;
+    border-radius: 10px;
+    background: #ffe4a3;
+    color: #6d3b0b;
+    font-size: 10px;
+    font-weight: 700;
+    vertical-align: middle;
+}
+
 .student-status {
     margin: 17px 0 0 11px;
     font-size: 10px;
@@ -581,6 +612,47 @@ body {
     background: var(--card-yellow);
     font-size: 13px;
     font-weight: 700;
+}
+
+.student-manage-list {
+    display: grid;
+    gap: 8px;
+}
+
+.student-manage-row {
+    display: grid;
+    grid-template-columns: 1fr 140px 90px;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    border: 1px solid transparent;
+    background: var(--card-pink);
+}
+
+.student-manage-row.is-teacher {
+    border-color: #7a4a13;
+    background: #ffe4a3;
+}
+
+.student-manage-name {
+    font-weight: 700;
+}
+
+.student-manage-row select {
+    height: 32px;
+    border: 1px solid #a78485;
+    border-radius: 4px;
+    background: #fffafa;
+    font: inherit;
+}
+
+.teacher-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 @media (max-width: 650px) {
