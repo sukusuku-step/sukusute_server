@@ -92,6 +92,25 @@ class ChildSearchResponse(Result):
     name: str
 
 
+class DeviceStatusRequest(pydantic.BaseModel):
+    """M5から受信する最新の端末状態"""
+    child_id: int = pydantic.Field(gt=0)
+    battery: int = pydantic.Field(ge=0, le=100)
+    wifi_rssi: int = pydantic.Field(ge=-127, le=0)
+
+
+class DeviceStatus(pydantic.BaseModel):
+    """メモリ上に保持する端末状態"""
+    child_id: int
+    battery: int
+    wifi_rssi: int
+    updated_at: datetime.datetime
+
+
+class DeviceStatusListResponse(Result):
+    devices: list[DeviceStatus]
+
+
 # ===== 児童一覧 =====
 
 class ChildListItem(pydantic.BaseModel):

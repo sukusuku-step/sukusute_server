@@ -5,6 +5,7 @@ const state = {
     selectedClassId: null,
     children: [],
     steps: {},
+    deviceStatuses: {},
     selectedDate: new Date(),
     // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
     teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
@@ -157,7 +158,13 @@ async function loadDashboard() {
     try {
         const children = await apiRequest(`/api/children${classQuery}`);
         state.children = children.children || [];
-        const stats = await apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`);
+        const [stats, deviceStatuses] = await Promise.all([
+            apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`),
+            apiRequest('/api/device_status')
+        ]);
+        state.deviceStatuses = Object.fromEntries(
+            (deviceStatuses.devices || []).map((item) => [item.child_id, item])
+        );
         state.steps = {};
         for (const item of stats.student_ranking || []) state.steps[item.child_id] = item.steps || 0;
         renderStudents();
@@ -178,6 +185,7 @@ async function loadDashboard() {
 
 // 児童を歩数順に並べ、歩数カードをHTMLへ描画する。カードはDOMを使い回し、歩数だけスロット風に更新する。
 function renderStudents() {
+        const deviceStatus = state.deviceStatuses[child.child_id];
     const grid = document.getElementById('studentGrid');
     if (!state.children.length) {
         grid.innerHTML = '<div class="loading">このクラスに児童データがありません</div>';
@@ -204,9 +212,13 @@ function renderStudents() {
             card.innerHTML = `
                 <div class="student-name"></div>
                 <div class="student-steps">歩数：<strong class="step-number"></strong></div>
+                <div class="device-status"></div>
                 <div class="student-status"></div>`;
         }
         card.querySelector('.student-name').innerHTML = nameHtml;
+        card.querySelector('.device-status').textContent = deviceStatus
+            ? `バッテリー ${deviceStatus.battery}% ・ WiFi ${deviceStatus.wifi_rssi} dBm`
+            : '端末情報 未受信';
         card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
         card.querySelector('.student-status').innerHTML = statusHtml;
         const referenceNode = grid.children[index];

@@ -91,6 +91,8 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `PATCH` | `/api/classes/{class_id}` | クラス変更 | クラス名を変更する |
 | `PATCH` | `/api/children/{child_id}/class` | 所属クラス変更 | 児童を指定クラスへ移動する。class_idをnullにすると未所属に戻す |
 | `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
+| `POST` | `/api/device_status` | M5端末状態受信 | バッテリー残量とWiFi RSSIをメモリ上の最新値として保持する |
+| `GET` | `/api/device_status` | M5端末状態一覧 | 受信済みのバッテリー残量とWiFi RSSIを児童ID順で返す |
 | `POST` | `/api/push_csv/{child_id}` | センサーデータCSV受信 | 指定児童の歩数、9軸センサーデータ、相対距離を保存する |
 | `GET` | `/api/children?class_id={class_id}` | 児童一覧 | 登録済み児童を `child_id` 順で返す。class_id指定時はクラスで絞り込む |
 | `GET` | `/api/children/search?name={name}` | 児童検索・登録 | 名前を完全一致で検索し、なければ新規作成する |
