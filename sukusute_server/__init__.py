@@ -20,6 +20,7 @@ import sqlalchemy
 import sqlalchemy.orm
 import sqlalchemy.sql.functions
 from sqlalchemy import or_
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from sukusute_server import http_models, database_models, ml
 
@@ -330,24 +331,40 @@ async def push_csv(
     parsed_distance_children: list[int] = []
     for child in distance_children:
         parsed_distance_children.append(int(child[9:]))
+    child_data_rows = []
+    distance_data_rows = []
     for row in parsed_csv:
         timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, start, *distances = row
         calculated_time = start_time + datetime.timedelta(seconds=float(timestamp))
-        dbsession.add(database_models.SingleChildData(
-            child_id=child_id,
-            date=calculated_time,
-            steps=int(steps),
-            ax=float(ax), ay=float(ay), az=float(az),
-            gx=float(gx), gy=float(gy), gz=float(gz),
-            mx=float(mx), my=float(my), mz=float(mz)
-        ))
+        child_data_rows.append({
+            "child_id": child_id,
+            "date": calculated_time,
+            "steps": int(steps),
+            "ax": float(ax), "ay": float(ay), "az": float(az),
+            "gx": float(gx), "gy": float(gy), "gz": float(gz),
+            "mx": float(mx), "my": float(my), "mz": float(mz),
+        })
         for i, distance in enumerate(distances):
-            distance_obj = database_models.ChildDistanceData(
-                date=calculated_time,
-                distance=float(distance)
-            )
-            distance_obj.children_ids = (child_id, parsed_distance_children[i])
-            dbsession.add(distance_obj)
+            if not distance.strip():
+                continue
+            other_child_id = parsed_distance_children[i]
+            distance_data_rows.append({
+                "child_id_1": min(child_id, other_child_id),
+                "child_id_2": max(child_id, other_child_id),
+                "date": calculated_time,
+                "distance": float(distance),
+            })
+
+    if child_data_rows:
+        child_data_insert = sqlite_insert(database_models.SingleChildData).on_conflict_do_nothing(
+            index_elements=["child_id", "date", "steps"]
+        )
+        await dbsession.execute(child_data_insert, child_data_rows)
+    if distance_data_rows:
+        distance_insert = sqlite_insert(database_models.ChildDistanceData).on_conflict_do_nothing(
+            index_elements=["child_id_1", "child_id_2", "date"]
+        )
+        await dbsession.execute(distance_insert, distance_data_rows)
     await dbsession.commit()
 
     # 機械学習のタスクを作成する
@@ -779,6 +796,67 @@ async def get_today_stats(
         ))
     student_ranking.sort(key=lambda x: x.steps, reverse=True)
 
+    distance_data = database_models.ChildDistanceData
+    latest_distances = (
+        sqlalchemy.select(
+            distance_data.child_id_1.label("child_id_1"),
+            distance_data.child_id_2.label("child_id_2"),
+            sqlalchemy.func.max(distance_data.date).label("latest_date"),
+        )
+        .where(
+            distance_data.date >= start_date,
+            distance_data.date <= end_date,
+        )
+        .group_by(distance_data.child_id_1, distance_data.child_id_2)
+        .subquery()
+    )
+    other_child = sqlalchemy.orm.aliased(database_models.Child)
+    latest_distance_records = (await dbsession.execute(
+        sqlalchemy.select(distance_data, database_models.Child.name, other_child.name)
+        .join(latest_distances, sqlalchemy.and_(
+            distance_data.child_id_1 == latest_distances.c.child_id_1,
+            distance_data.child_id_2 == latest_distances.c.child_id_2,
+            distance_data.date == latest_distances.c.latest_date,
+        ))
+        .join(database_models.Child, distance_data.child_id_1 == database_models.Child.child_id)
+        .join(other_child, distance_data.child_id_2 == other_child.child_id)
+    )).all()
+
+    nearest_by_child = {}
+    distance_recency_window = datetime.timedelta(seconds=30)
+    for record, name1, name2 in latest_distance_records:
+        if not math.isfinite(record.distance) or record.distance < 0:
+            continue
+        latest_measurement = max(
+            (
+                latest_step_records[child_id][2]
+                for child_id in (record.child_id_1, record.child_id_2)
+                if child_id in latest_step_records
+            ),
+            default=None,
+        )
+        if latest_measurement is None:
+            continue
+        distance_age = latest_measurement - record.date
+        if distance_age < datetime.timedelta(0) or distance_age > distance_recency_window:
+            continue
+        for child_id, nearest_name in (
+            (record.child_id_1, name2),
+            (record.child_id_2, name1),
+        ):
+            current = nearest_by_child.get(child_id)
+            if current is None or record.distance < current[1]:
+                nearest_by_child[child_id] = (nearest_name, record.distance)
+
+    nearest_children = [
+        http_models.NearestChild(
+            child_id=child_id,
+            name=nearest_name,
+            distance=distance,
+        )
+        for child_id, (nearest_name, distance) in nearest_by_child.items()
+    ]
+
     logger.info(f"get_today_stats: student_ranking={student_ranking}")
 
     return http_models.TodayStatsResponse(
@@ -794,6 +872,7 @@ async def get_today_stats(
         step_change_percent=step_change_percent,
         steps_by_hour=steps_by_hour,
         student_ranking=student_ranking,
+        nearest_children=nearest_children,
         warnings=warnings
     )
 
