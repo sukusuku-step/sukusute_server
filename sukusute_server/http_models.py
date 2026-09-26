@@ -240,6 +240,13 @@ class StudentRankingItem(pydantic.BaseModel):
     steps: int
 
 
+class NearestChild(pydantic.BaseModel):
+    """指定日の最新距離で最も近い相手"""
+    child_id: int
+    name: str
+    distance: float
+
+
 class TodayStatsResponse(Result):
     """ 今日の集計情報レスポンス """
     date: datetime.datetime
@@ -253,6 +260,7 @@ class TodayStatsResponse(Result):
     step_change_percent: float
     steps_by_hour: list[StepsByHour]
     student_ranking: list[StudentRankingItem]
+    nearest_children: list[NearestChild] = pydantic.Field(default_factory=list)
     warnings: list[StepWarning]
 
 
