@@ -11,7 +11,6 @@ import typing
 import asyncio
 import csv
 import io
-import time
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,28 +63,12 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def log_api_request(request: fastapi.Request, call_next):
-    """APIへのアクセス元、呼び出し内容、応答結果をサーバログに記録する。"""
-    if not request.url.path.startswith("/api/"):
-        return await call_next(request)
-
-    started_at = time.perf_counter()
-    status_code = 500
-    try:
-        response = await call_next(request)
-        status_code = response.status_code
-        return response
-    finally:
-        client = request.client
-        client_address = client.host if client else "unknown"
-        logging.getLogger("uvicorn.error").info(
-            "API access: %s %s %s -> %d (%.1f ms)",
-            client_address,
-            request.method,
-            request.url.path,
-            status_code,
-            (time.perf_counter() - started_at) * 1000,
-        )
+async def prevent_frontend_cache(request: fastapi.Request, call_next):
+    """ブラウザーが古い画面ファイルを再利用しないようにする。"""
+    response = await call_next(request)
+    if request.url.path in {"/", "/index.html", "/app.js", "/style.css"}:
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 def hash_password(password: str, salt: bytes | None = None) -> bytes:
     """パスワードをソルト付きPBKDF2-SHA256でハッシュ化して保存形式にする。"""
