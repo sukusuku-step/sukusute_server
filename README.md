@@ -91,8 +91,7 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `PATCH` | `/api/classes/{class_id}` | クラス変更 | クラス名を変更する |
 | `PATCH` | `/api/children/{child_id}/class` | 所属クラス変更 | 児童を指定クラスへ移動する。class_idをnullにすると未所属に戻す |
 | `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
-| `POST` | `/api/push_data` | 歩数・距離の受信 | 指定児童の歩数や児童間距離をデータベースに保存する |
-| `POST` | `/api/push_csv/{child_id}` | センサーデータCSV受信 | 指定児童の歩数と9軸センサーデータを保存する |
+| `POST` | `/api/push_csv/{child_id}` | センサーデータCSV受信 | 指定児童の歩数、9軸センサーデータ、相対距離を保存する |
 | `GET` | `/api/children?class_id={class_id}` | 児童一覧 | 登録済み児童を `child_id` 順で返す。class_id指定時はクラスで絞り込む |
 | `GET` | `/api/children/search?name={name}` | 児童検索・登録 | 名前を完全一致で検索し、なければ新規作成する |
 | `GET` | `/api/children/{child_id}` | 児童データ取得 | 児童情報、歩数、距離の全レコードを返す |
@@ -186,44 +185,16 @@ CLIではユーザー名が存在すれば `teacher` テーブルから削除さ
 
 ### データ送信
 
-#### `POST /api/push_data`
-
-指定した児童の歩数、または児童間距離を保存します。`singledata` と `distances` はどちらも任意ですが、両方省略すると何も保存せず成功します。未知のフィールドは無視されます。
-
-```json
-{
-  "child_id": 1,
-  "singledata": {
-    "date": "2026-07-15T10:00:00",
-    "steps": 1234
-  },
-  "distances": [
-    {
-      "date": "2026-07-15T10:00:00",
-      "with_child": 3,
-      "distance": 0.035
-    }
-  ]
-}
-```
-
-`child_id` が存在しない場合は `404` です。距離データの `with_child` が存在しない場合、その距離レコードだけ警告ログを出して無視し、リクエスト全体は成功します。保存時には児童IDの大小を並べ替えるため、送信方向が逆でも同じ児童ペアとして扱われます。
-
-成功時:
-
-```json
-{"status": "ok", "msg": null}
-```
-
 #### `POST /api/push_csv/{child_id}`
 
 指定児童のセンサーデータをCSVでまとめて保存します。リクエスト本文はUTF-8のCSVで、1行目をヘッダーとして読み飛ばします。データ行の列順は次のとおりです。
 
 ```text
-timestamp,steps,ax,ay,az,gx,gy,gz,mx,my,mz,start
+timestamp,steps,ax,ay,az,gx,gy,gz,mx,my,mz,start,Distance_{child_id},Distance_{child_id}, ...
 ```
 
-`timestamp` は `start` からの経過秒数です。各行の保存日時は `start + timestamp秒` として計算されます。`ax`〜`az` は加速度、`gx`〜`gz` はジャイロ、`mx`〜`mz` は地磁気の値です。`{child_id}` に対応する児童が存在しない場合は `404` を返します。
+`timestamp` は `start` からの経過秒数です。各行の保存日時は `start + timestamp秒` として計算されます。`ax`〜`az` は加速度、`gx`〜`gz` はジャイロ、`mx`〜`mz` は地磁気の値です。`{child_id}` に対応する児童が存在しない場合は `404` を返します。  
+`Distance_{child_id}`は、その児童の相対距離データを表します。`{child_id}`の箇所には相手児童のchild_idを入れます。
 
 成功時:
 
@@ -333,11 +304,6 @@ curl http://localhost:8000/api/health
 # デバッグ児童を作成して一覧を見る
 curl -X POST http://localhost:8000/api/create_debug_child
 curl http://localhost:8000/api/children
-
-# 歩数を送信
-curl -X POST http://localhost:8000/api/push_data \
-  -H "Content-Type: application/json" \
-  -d '{"child_id":1,"singledata":{"steps":1234}}'
 
 # センサーデータCSVを送信
 curl -X POST http://localhost:8000/api/push_csv/1 \

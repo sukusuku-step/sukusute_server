@@ -273,55 +273,6 @@ def health() -> http_models.Result:
     """サーバーが応答可能であることを示す固定レスポンスを返す。"""
     return http_models.Result(status="ok")
 
-
-# ===== データ受信 =====
-
-@app.post("/api/push_data", tags=["API"])
-async def push_data(
-    data: http_models.ChildDataRecord,
-    dbsession: database_models.SessionDep
-) -> http_models.Result:
-    """デバイスから歩数・距離を受信し、対応するテーブルへ保存する。"""
-    logger.info(
-        f"Received data: child_id={data.child_id}, "
-        f"singledata={data.singledata}, distances={data.distances}"
-    )
-
-    # 対象児童を取得
-    target_child = await dbsession.get(database_models.Child, data.child_id)
-    if not target_child:
-        raise fastapi.HTTPException(404, f"Child {data.child_id} not found")
-
-    # 距離データを処理
-    if data.distances:
-        for distance in data.distances:
-            # 相手児童を取得
-            other_child = await dbsession.get(database_models.Child, distance.with_child)
-            if not other_child:
-                logger.warning(f"Child {distance.with_child} not found for distance data")
-                continue
-
-            # ChildDistanceDataを作成（children setterを使用）
-            cdd = database_models.ChildDistanceData(
-                distance=distance.distance,
-                date=distance.date
-            )
-            # children setterを呼び出してchild_1, child_2を自動設定
-            cdd.children = (target_child, other_child)
-            dbsession.add(cdd)
-            logger.info(
-                f"Added distance: {target_child.name} -> "
-                f"{other_child.name} = {distance.distance} km"
-            )
-    await dbsession.commit()
-    logger.info(
-        "[push_data] saved child_id=%s steps=%s distances=%s",
-        data.child_id,
-        data.singledata.steps if data.singledata else None,
-        len(data.distances or []),
-    )
-    return http_models.Result(status="ok")
-
 # ===== センサーデータCSV受信 =====
 
 @app.post("/api/push_csv/{child_id}", tags=["API"])
@@ -335,20 +286,31 @@ async def push_csv(
         raise fastapi.HTTPException(404, f"Child {child_id} not found.")
 
     # CSVの先頭行はヘッダーで、各行のtimestampは開始日時からの経過秒数。
-    parsed_csv = list(csv.reader(io.StringIO(body.decode(encoding="utf-8"))))[1:]
+    parsed_csv = list(csv.reader(io.StringIO(body.decode(encoding="utf-8"))))
+    _, _, _, _, _, _, _, _, _, _, _, _, *distance_children = parsed_csv[0]
+    del parsed_csv[0]
     start_time = datetime.datetime.fromisoformat(parsed_csv[0][11])
+    parsed_distance_children: list[int] = []
+    for child in distance_children:
+        parsed_distance_children.append(int(child[9:]))
     for row in parsed_csv:
-        timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, start = row
+        timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, start, *distances = row
         calculated_time = start_time + datetime.timedelta(seconds=float(timestamp))
         dbsession.add(database_models.SingleChildData(
             child_id=child_id,
             date=calculated_time,
-            steps=steps,
-            ax=ax, ay=ay, az=az,
-            gx=gx, gy=gy, gz=gz,
-            mx=mx, my=my, mz=mz
+            steps=int(steps),
+            ax=float(ax), ay=float(ay), az=float(az),
+            gx=float(gx), gy=float(gy), gz=float(gz),
+            mx=float(mx), my=float(my), mz=float(mz)
         ))
-        logger.info(f"Received CSV: child_id={child_id}, steps={steps}, date={calculated_time}, ({ax}, {ay}, {az}), ({gx}, {gy}, {gz}), ({mx}, {my}, {mz})")
+        for i, distance in enumerate(distances):
+            distance_obj = database_models.ChildDistanceData(
+                date=calculated_time,
+                distance=float(distance)
+            )
+            distance_obj.children_ids = (child_id, parsed_distance_children[i])
+            dbsession.add(distance_obj)
     await dbsession.commit()
     return http_models.Result(status="ok")
 
