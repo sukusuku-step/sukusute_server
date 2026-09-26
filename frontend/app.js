@@ -5,6 +5,7 @@ const state = {
     selectedClassId: null,
     children: [],
     steps: {},
+    nearestNames: {},
     deviceStatuses: {},
     selectedDate: new Date(),
     // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
@@ -15,6 +16,7 @@ const state = {
 const STEP_WARNING_THRESHOLD = 3000;
 const WARNING_DECREASE_PERCENT = 60;
 const NORMAL_INCREASE_PERCENT = 20;
+const DEVICE_STATUS_STALE_MS = 60_000;
 
 let refreshTimer = null;
 let refreshInProgress = false;
@@ -178,6 +180,9 @@ async function loadDashboard() {
                 state.steps = Object.fromEntries(
                     (stats.student_ranking || []).map((item) => [item.child_id, item.steps || 0])
                 );
+                state.nearestNames = Object.fromEntries(
+                    (stats.nearest_children || []).map((item) => [item.child_id, item.name])
+                );
                 renderStudents();
                 renderRanking();
                 renderWarnings(stats.warnings || []);
@@ -232,9 +237,12 @@ function renderStudents() {
     });
     sorted.forEach((child, index) => {
         const deviceStatus = state.deviceStatuses[child.child_id];
-        const wifiSignalLevel = deviceStatus ? getWifiSignalLevel(deviceStatus.wifi_rssi) : 0;
-        const wifiRssiLabel = deviceStatus ? `${deviceStatus.wifi_rssi} dBm` : 'N/A';
-        const wifiDescription = deviceStatus
+        const statusAge = deviceStatus ? Date.now() - Date.parse(deviceStatus.updated_at) : Infinity;
+        const isDeviceStatusFresh = statusAge >= 0 && statusAge < DEVICE_STATUS_STALE_MS;
+        const currentDeviceStatus = isDeviceStatusFresh ? deviceStatus : null;
+        const wifiSignalLevel = currentDeviceStatus ? getWifiSignalLevel(currentDeviceStatus.wifi_rssi) : 0;
+        const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : 'N/A';
+        const wifiDescription = currentDeviceStatus
             ? `Wi-Fi電波強度 ${wifiSignalLevel}/4、${wifiRssiLabel}`
             : 'Wi-Fi電波強度 N/A';
         const wifiBars = [1, 2, 3, 4].map((barNumber) =>
@@ -258,10 +266,22 @@ function renderStudents() {
                 <div class="device-status"></div>
                 <div class="student-status"></div>`;
         }
-        card.classList.toggle('has-telemetry', Boolean(deviceStatus));
+        card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
         card.querySelector('.student-name').innerHTML = nameHtml;
+        const nearestName = state.nearestNames[child.child_id];
+        let nearestPerson = card.querySelector('.nearest-person');
+        if (nearestName) {
+            if (!nearestPerson) {
+                nearestPerson = document.createElement('div');
+                nearestPerson.className = 'nearest-person';
+                card.querySelector('.student-steps').insertAdjacentElement('afterend', nearestPerson);
+            }
+            nearestPerson.textContent = `近くにいる人：${nearestName}`;
+        } else {
+            nearestPerson?.remove();
+        }
         card.querySelector('.device-status').innerHTML = `
-            <span>BAT : ${deviceStatus ? `${deviceStatus.battery}%` : 'N/A'}</span>
+            <span>BAT : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'N/A'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
             <span class="wifi-status" role="img" aria-label="${wifiDescription}" title="${wifiDescription}">
                 <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
                 <span>Wi-Fi ${wifiRssiLabel}</span>
