@@ -81,16 +81,14 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         distance_input = np.fromiter((record.distance for record in child_distance_records_10min), dtype=np.float32)
         distance_result = sukusute_machine_learning.inference.predict_distance.distance_infer(distance_input)
 
-        distance_evalhist_stmt = select(sukusute_server.database_models.ChildDistanceEvaluationHistory) \
+        distance_evalhist_stmt = select(sukusute_server.database_models.ChildDistanceEvaluationHistory.evaluated) \
             .where(and_(
                 sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == min((child_id, other_child_id)),
                 sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == max((child_id, other_child_id)),
             )) \
             .order_by(sukusute_server.database_models.ChildDistanceEvaluationHistory.date.asc())
         distance_evalhist_records = (await dbsession.execute(distance_evalhist_stmt)).scalars().all()
-        relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(
-            record.evaluated for record in distance_evalhist_records
-        )
+        relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(distance_evalhist_records)
         dbsession.add(sukusute_server.database_models.ChildDistanceEvaluationHistory(
             child_id_1=min((child_id, other_child_id)),
             child_id_2=max((child_id, other_child_id)),
