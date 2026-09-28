@@ -240,6 +240,13 @@ class StudentRankingItem(pydantic.BaseModel):
     steps: int
 
 
+class StepIncreaseRankingItem(pydantic.BaseModel):
+    """1分間の歩数増加ランキング項目"""
+    child_id: int
+    name: str
+    increase_steps: int
+
+
 class NearestChild(pydantic.BaseModel):
     """指定日の最新距離で最も近い相手"""
     child_id: int
@@ -260,6 +267,7 @@ class TodayStatsResponse(Result):
     step_change_percent: float
     steps_by_hour: list[StepsByHour]
     student_ranking: list[StudentRankingItem]
+    step_increase_ranking: list[StepIncreaseRankingItem] = pydantic.Field(default_factory=list)
     nearest_children: list[NearestChild] = pydantic.Field(default_factory=list)
     warnings: list[StepWarning]
 

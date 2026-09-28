@@ -5,6 +5,7 @@ const state = {
     selectedClassId: null,
     children: [],
     steps: {},
+    stepIncreaseRanking: [],
     nearestNames: {},
     deviceStatuses: {},
     selectedDate: new Date(),
@@ -171,6 +172,7 @@ async function loadDashboard() {
     try {
         const children = await apiRequest(`/api/children${classQuery}`);
         state.children = children.children || [];
+        state.stepIncreaseRanking = [];
         // 歩数や端末状態のAPIを待たず、DBの児童一覧を先に表示する。
         renderStudents();
         renderRanking();
@@ -180,6 +182,7 @@ async function loadDashboard() {
                 state.steps = Object.fromEntries(
                     (stats.student_ranking || []).map((item) => [item.child_id, item.steps || 0])
                 );
+                state.stepIncreaseRanking = stats.step_increase_ranking || [];
                 state.nearestNames = Object.fromEntries(
                     (stats.nearest_children || []).map((item) => [item.child_id, item.name])
                 );
@@ -294,13 +297,16 @@ function renderStudents() {
     });
 }
 
-// 現在表示中の児童から歩数上位5名をランキングへ描画する。
+// 現在表示中の児童から直近1分の歩数増加上位5名を描画する。
 function renderRanking() {
-    const ranking = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0)).slice(0, 5);
+    const visibleChildIds = new Set(state.children.map((child) => child.child_id));
+    const ranking = state.stepIncreaseRanking
+        .filter((item) => visibleChildIds.has(item.child_id))
+        .slice(0, 5);
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
-        const child = ranking[index];
-        item.innerHTML = child
-            ? `<span>${index + 1}.</span><strong>${escapeHtml(child.name || `児童${child.child_id}`)}</strong>`
+        const entry = ranking[index];
+        item.innerHTML = entry
+            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `児童${entry.child_id}`)}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
 }

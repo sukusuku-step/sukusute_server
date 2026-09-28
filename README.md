@@ -289,6 +289,7 @@ timestamp,steps,ax,ay,az,gx,gy,gz,mx,my,mz,start,Distance_{child_id},Distance_{c
 - `avg_steps`: 登録児童数で割った整数平均
 - `goal_met_count`: 10,000歩以上の児童数
 - `student_ranking`: 歩数の降順。歩数データがない児童も0歩で含む
+- `step_increase_ranking`: 各児童の最新測定値と1分前の測定値との差の降順。測定間隔が90秒を超える場合や比較データがない場合は0歩
 - `steps_by_hour`: 0時から23時までの時間別歩数
 - `warnings`: 過去7日間の平均の50%未満で、過去データが3件以上ある児童
 - `walk_time`、`calories`、`step_change`、`step_change_percent`: 全体の歩数から計算した値

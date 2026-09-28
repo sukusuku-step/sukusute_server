@@ -645,7 +645,7 @@ async def get_today_stats(
         f"get_today_stats: year={year}, month={month}, day={day}"
     )
 
-    # 全児童のその日の最新の歩数データ
+    # 全児童のその日の歩数データ（累計と1分間の増加ランキングに使用）
     all_step_data = (await dbsession.execute(
         sqlalchemy.select(
             database_models.SingleChildData.child_id,
@@ -678,11 +678,24 @@ async def get_today_stats(
     student_steps = {}
     student_child_ids = {}
     latest_step_records = {}
+    step_increases = {}
+    step_increase_checked = set()
     for child_id, name, steps_val, date_val in all_step_data:
         if child_id not in student_steps:
             student_steps[child_id] = steps_val
             student_child_ids[name] = child_id
             latest_step_records[child_id] = (name, steps_val, date_val)
+        elif child_id not in step_increase_checked:
+            latest_date = latest_step_records[child_id][2]
+            baseline_date = latest_date - datetime.timedelta(minutes=1)
+            if date_val <= baseline_date:
+                elapsed = latest_date - date_val
+                step_increases[child_id] = (
+                    max(student_steps[child_id] - steps_val, 0)
+                    if elapsed <= datetime.timedelta(seconds=90)
+                    else 0
+                )
+                step_increase_checked.add(child_id)
 
     total_steps = sum(student_steps.values())
 
@@ -787,6 +800,7 @@ async def get_today_stats(
 
     # 児童別ランキング（データがない児童も含める）
     student_ranking = []
+    step_increase_ranking = []
     for child in all_children:
         steps = student_steps.get(child.child_id, 0)
         student_ranking.append(http_models.StudentRankingItem(
@@ -794,7 +808,13 @@ async def get_today_stats(
             name=child.name,
             steps=steps
         ))
+        step_increase_ranking.append(http_models.StepIncreaseRankingItem(
+            child_id=child.child_id,
+            name=child.name,
+            increase_steps=step_increases.get(child.child_id, 0)
+        ))
     student_ranking.sort(key=lambda x: x.steps, reverse=True)
+    step_increase_ranking.sort(key=lambda x: x.increase_steps, reverse=True)
 
     distance_data = database_models.ChildDistanceData
     latest_distances = (
@@ -872,6 +892,7 @@ async def get_today_stats(
         step_change_percent=step_change_percent,
         steps_by_hour=steps_by_hour,
         student_ranking=student_ranking,
+        step_increase_ranking=step_increase_ranking,
         nearest_children=nearest_children,
         warnings=warnings
     )
