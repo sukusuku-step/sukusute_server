@@ -19,7 +19,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                     ) \
                     .order_by(sukusute_server.database_models.SingleChildData.date.asc())
     single_records = (await dbsession.execute(single_stmt)).scalars().all()
-    single_records_10min = [record for record in single_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=10)][:6000]
+    single_records_10min = [record for record in single_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=11)][:6000]
     if len(single_records_10min) < 6000:
         return
     behavior_input = np.fromiter(((
@@ -29,7 +29,17 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         record.mx, record.my, record.mz
     ) for record in single_records_10min), dtype=(np.float32, 10))
     behavior_result = sukusute_machine_learning.inference.predict_behavior.behavior_infer(behavior_input)
-    activity_result = sukusute_machine_learning.inference.predict_behavior.activity_infer(behavior_input)
+    del behavior_input, single_records_10min
+
+    single_records_1h = [record for record in single_records if record.date > datetime.datetime.now() - datetime.timedelta(hours=1)]
+    activity_input = np.fromiter(((
+        record.steps,
+        record.ax, record.ay, record.az,
+        record.gx, record.gy, record.gz,
+        record.mx, record.my, record.mz
+    ) for record in single_records_1h), dtype=(np.float32, 10))
+    activity_result = sukusute_machine_learning.inference.predict_behavior.activity_infer(activity_input)
+    del activity_input, single_records_1h
     
     baseline_input = np.fromiter(((
         record.steps,
@@ -41,6 +51,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(baseline_input)["features"]
     except (ValueError, TypeError):
         baseline_result = None
+    del baseline_input, single_records
 
     dbsession.add(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory(
         child_id=child_id,
