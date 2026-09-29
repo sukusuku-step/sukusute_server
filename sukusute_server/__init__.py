@@ -1204,8 +1204,8 @@ async def get_ml_relation_result(
     record = (await dbsession.scalar(
         sqlalchemy.select(database_models.ChildDistanceEvaluationHistory)
         .where(and_(
-            database_models.ChildDistanceEvaluationHistory.child_id_1 == max(child_id_1, child_id_2),
-            database_models.ChildDistanceEvaluationHistory.child_id_2 == min(child_id_1, child_id_2)
+            database_models.ChildDistanceEvaluationHistory.child_id_1 == min(child_id_1, child_id_2),
+            database_models.ChildDistanceEvaluationHistory.child_id_2 == max(child_id_1, child_id_2)
         ))
         .order_by(sqlalchemy.desc(database_models.ChildDistanceEvaluationHistory.date))
         .limit(1)

@@ -14,11 +14,18 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                         child_id: int,
                         distance_child_ids: list[int]) -> None:
 
-    # 10秒毎でこのタスクは呼ばれる
-    # 10分単位のデータに対する実行のための10分以下のスパンでの再実行は早期returnする
-    if await dbsession.scalar(select(func.count()) \
-            .select_from(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory)
-            .where(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.date >= datetime.datetime.now() - datetime.timedelta(minutes=10))):
+    # 10秒毎でこのml.pyのバッググランドタスクは呼ばれる
+    # 10分単位のデータに対する実行のための（児童ごとに見て）10分以下のスパンでの再実行は早期returnする
+    if await dbsession.scalar(
+        select(func.count())
+        .select_from(
+            sukusute_server.database_models.ChildBehaviorDataEvaluationHistory
+        )
+        .where(
+            sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id,
+            sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.date >= datetime.datetime.now() - datetime.timedelta(minutes=10)
+        )
+    ):
         return
 
     # ある1人の児童の計測データ（歩数・加速度）を取得
@@ -115,8 +122,11 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
             child_distance_records_10min = [record for record in distance_records_10min if record.child_id_1 == other_child_id][:6000]
         else:
             child_distance_records_10min = [record for record in distance_records_10min if record.child_id_2 == other_child_id][:6000]
+
+        # 距離データ不足の相手がいたらその相手だけ飛ばす
         if len(child_distance_records_10min) < 6000:
-            return
+            continue
+        
         distance_input = np.fromiter((record.distance for record in child_distance_records_10min), dtype=np.float32)
 
         # それぞれの相手デバイスに対して直近10分間の相対距離の計測データから分類ラベルを推定
