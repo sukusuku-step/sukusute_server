@@ -963,3 +963,125 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+.related-network-modal {
+    width: min(1200px, calc(100vw - 40px));
+    max-height: calc(100vh - 24px);
+    padding: 16px 24px;
+    overflow: hidden;
+}
+
+.network-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 230px;
+    gap: 16px;
+    align-items: start;
+}
+
+.related-network-graph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 800px;
+    min-height: 430px;
+    overflow: hidden;
+    border: 1px solid #d9abad;
+    border-radius: 6px;
+    background: #fffafa;
+}
+
+.network-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.network-edge {
+    cursor: pointer;
+    transition:
+        stroke-width .15s ease,
+        stroke-opacity .15s ease;
+}
+
+.network-edge:hover,
+.network-edge.is-selected {
+    stroke-opacity: 1;
+}
+
+.network-edge.is-selected {
+    filter: drop-shadow(0 0 2px rgba(80, 20, 20, .45));
+}
+
+.network-node circle {
+    fill: #f5d4d5;
+    stroke: #4a1111;
+    stroke-width: 2;
+}
+
+.network-node text {
+    fill: #210707;
+    font-size: 14px;
+    font-weight: 700;
+    pointer-events: none;
+}
+
+.network-edge-detail {
+    display: grid;
+    gap: 8px;
+    align-self: center;
+    min-height: 140px;
+    max-height: 300px;
+    padding: 14px;
+    border: 1px solid #d9abad;
+    border-radius: 6px;
+    background: #fff;
+    color: #210707;
+    font-size: 13px;
+}
+
+.network-edge-detail strong {
+    font-size: 15px;
+}
+
+.network-edge-score {
+    font-size: 28px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 800px) {
+    .network-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .related-network-graph,
+    .network-svg {
+        min-height: 500px;
+    }
+}
+
+.network-legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    font-size: 11px;
+}
+
+.legend-edge {
+    display: inline-block;
+    width: 38px;
+}
+
+.legend-edge.low {
+    border-top: 2px solid #c9baba;
+}
+
+.legend-edge.medium {
+    border-top: 7px solid #d49b00;
+}
+
+.legend-edge.high {
+    border-top: 14px solid #b71c1c;
+}

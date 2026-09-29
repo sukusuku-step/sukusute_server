@@ -110,8 +110,26 @@
         </section>
         <section id="relationModal" class="modal-card relation-modal is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>各児童間の相関関係</h2><p class="modal-caption">児童間の最新の距離状態のステータスと、その履歴から算出した関連度スコアを一覧で表示します。</p>
+            <h2>各児童間の相関関係</h2><p class="modal-caption">児童間の最新の距離状態のステータスと、その履歴から算出した関連度スコアを一覧で確認できます。</p>
             <div id="relationGraph" class="relation-graph"></div>
+        </section>
+        <section id="relatedNetworkModal" class="modal-card related-network-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button">×</button>
+            <h2>児童間の関係ネットワーク図</h2>
+            <p class="modal-caption">線が太いほど児童間の関連度が高いことを表します。線をクリックすると詳細を確認できます。関連度スコアが0の場合は線が描画されません。</p>
+            <div class="network-layout">
+                <div id="relatedNetworkGraph" class="related-network-graph"></div>
+                <aside id="networkEdgeDetail" class="network-edge-detail">
+                    <strong>関係を選択してください</strong>
+                    <span>グラフ内の線をクリックしてそのステータスを確認できます。</span>
+                </aside>
+            </div>
+            <div class="network-legend">
+                <span>関連度</span>
+                <span class="legend-edge low"></span><small>低い</small>
+                <span class="legend-edge medium"></span><small>中程度</small>
+                <span class="legend-edge high"></span><small>高い</small>
+            </div>
         </section>
         <section id="studentManageModal" class="modal-card is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>

@@ -165,25 +165,25 @@ function formatAnomalyChange(feature, comparison) {
 
     if (Math.abs(baseline) < 1e-6) {
         if (current > baseline) {
-            return `${label}が普段より増えています`;
+            return `・${label}が普段よりも増加`;
         }
 
         if (current < baseline) {
-            return `${label}が普段より減っています`;
+            return `・${label}が普段よりも減少`;
         }
 
-        return `${label}が普段と異なる値になっています`;
+        return `・${label}が普段と大きく異なる数値`;
     }
 
     if (current > baseline) {
-        return `${label}が普段より${percent}%増えました`;
+        return `・${label}が普段よりも${percent}%増加`;
     }
 
     if (current < baseline) {
-        return `${label}が普段より${percent}%減りました`;
+        return `・${label}が普段よりも${percent}%減少`;
     }
 
-    return `${label}が普段と異なる値になっています`;
+    return `・${label}が普段と大きく異なる数値`;
 }
 
 // behavior/activity、ベースライン、児童間distance/関連度をまとめて取得する。
@@ -491,7 +491,7 @@ function renderStudents() {
                 <article class="warning-item" role="alert">
                     <strong>⚠ 普段と異なる状態を検出しました</strong>
                     <span>
-                        直近10分の特徴量がベースラインから
+                        直近の10分間でのデータがベースラインから
                         ${formatMlNumber(anomaly.threshold_percent, 1)}%以上外れています。    
                     </span>
                     <small>${anomalyWarnings.map(([feature, comparison]) =>
@@ -506,7 +506,7 @@ function renderStudents() {
                         <span>姿勢状態</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}での推論</small>
                         <span>走行状態</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}での推論</small>
                         <span>活動量</span><strong>${escapeHtml(behavior.activity_level)} / 5</strong><small>${formatConfidence(behavior.activity_confidence)}での推論</small>
-                    </div>` : '<p class="ml-empty">得られたステータスはまだありません</p>'}
+                    </div>` : '<p class="ml-empty">計測したデータがまだありません</p>'}
             </div>
             <details class="relation-details" ${state.mlDetailOpenStates[child.child_id]?.relation ? 'open' : ''}>
                 <summary>他児童との距離状態・関連度スコア</summary>
@@ -654,6 +654,200 @@ async function openRelationModal() {
     }
 }
 
+// 児童間の関係ネットワーク図を描画する。（重み付き無向グラフとして描画）
+function renderRelatedNetwork() {
+    const container = document.getElementById('relatedNetworkGraph');
+    const detail = document.getElementById('networkEdgeDetail');
+    const children = state.children;
+
+    if (children.length < 2) {
+        container.innerHTML = '<p>関係を表示できる児童が不足しています。</p>';
+        return;
+    }
+
+    const width = 1200;
+    const height = 460;
+
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) * 0.42;
+
+    const nodes = children.map((child, index) => {
+        const angle = (Math.PI * 2 * index / children.length) - Math.PI / 2;
+        return {
+            ...child,
+            x: centerX + Math.cos(angle) * radius,
+            y: centerY + Math.sin(angle) * radius
+        };
+    });
+
+    let edges = '';
+
+    for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+            const node1 = nodes[i];
+            const node2 = nodes[j];
+
+            const relation = state.mlRelations[relationKey(node1.child_id, node2.child_id)];
+            if (!relation) continue;
+
+            const score = Number(relation.score);
+            if (!Number.isFinite(score)) continue;
+
+            // 関連度スコアが0以下なら線は描画しない
+            if (score <= 0) continue;
+
+            const normalizedScore = Math.max(0, Math.min(1, score));
+
+            // 線幅を決める
+            const strokeWidth = 1.5 + Math.pow(normalizedScore, 1.7) * 16;
+
+            // 線の色を決める
+            const strokeColor = relationEdgeColor(normalizedScore);
+
+            edges += `
+                <!-- クリック判定専用：透明で太い線 -->
+                <line
+                    class="network-edge-hit"
+                    data-network-edge
+                    data-child1="${node1.child_id}"
+                    data-child2="${node2.child_id}"
+                    data-name1="${escapeHtml(node1.name)}"
+                    data-name2="${escapeHtml(node2.name)}"
+                    data-score="${score}"
+                    data-distance="${escapeHtml(relation.evaluated || '')}"
+                    data-confidence="${relation.confidence ?? ''}"
+
+                    x1="${node1.x}"
+                    y1="${node1.y}"
+                    x2="${node2.x}"
+                    y2="${node2.y}"
+
+                    stroke="transparent"
+                    stroke-width="24"
+                />
+
+                <!-- 実際に見える線 -->
+                <line
+                    class="network-edge"
+                    x1="${node1.x}"
+                    y1="${node1.y}"
+                    x2="${node2.x}"
+                    y2="${node2.y}"
+                    stroke="${strokeColor}"
+                    stroke-width="${strokeWidth}"
+                    stroke-opacity="${0.35 + normalizedScore * 0.6}"
+                    pointer-events="none"
+                />
+            `;
+        }
+    }
+
+    const nodeHtml = nodes.map((node) => `
+        <g class="network-node">
+            <circle
+                cx="${node.x}"
+                cy="${node.y}"
+                r="34">
+            </circle>
+
+            <text
+                x="${node.x}"
+                y="${node.y}"
+                text-anchor="middle"
+                dominant-baseline="middle">
+                ${escapeHtml(node.name)}
+            </text>
+        </g>
+    `).join('');
+
+    container.innerHTML = `
+        <svg
+            class="network-svg"
+            viewBox="0 0 ${width} ${height}"
+            role="img"
+            aria-label="児童間の関係ネットワーク図">
+
+            ${edges}
+            ${nodeHtml}
+
+        </svg>
+    `;
+
+    detail.innerHTML = `
+        <strong>関係を選択してください</strong>
+        <span>グラフ内の線をクリックしてそのステータスを確認できます。</span>
+    `;
+
+    container
+        .querySelectorAll('[data-network-edge]')
+        .forEach((edge) => {
+
+            edge.addEventListener('click', () => {
+
+                container
+                    .querySelectorAll('[data-network-edge]')
+                    .forEach((other) => {
+                        other.classList.remove('is-selected');
+                    });
+
+                edge.classList.add('is-selected');
+
+                const score =
+                    Number(edge.dataset.score);
+
+                const confidence =
+                    Number(edge.dataset.confidence);
+
+                detail.innerHTML = `
+                    <strong>
+                        ${escapeHtml(edge.dataset.name1)}
+                        ↔
+                        ${escapeHtml(edge.dataset.name2)}
+                    </strong>
+
+                    <span>関連度スコア</span>
+
+                    <span class="network-edge-score">
+                        ${formatMlNumber(score, 3)}
+                    </span>
+
+                    <span>0から1までの値です。1に近いほど関連度が高いと推定されます。</span>
+                `;
+            });
+        });
+}
+
+async function openRelatedNetworkModal() {
+    openModal('relatedNetworkModal');
+
+    const graph = document.getElementById('relatedNetworkGraph');
+    graph.innerHTML = '<p>データを読み込み中...</p>';
+
+    try {
+        await loadMlResults(true);
+        renderRelatedNetwork();
+    } catch (error) {
+        console.error(
+            '[ui] related network failed',
+            error
+        );
+
+        graph.innerHTML = '<p>関係ネットワーク図を生成できませんでした。</p>';
+    }
+}
+
+function relationEdgeColor(score) {
+    const value = Math.max(0, Math.min(1, Number(score)));
+
+    if (value >= 0.8) return '#b71c1c';
+    if (value >= 0.6) return '#e65100';
+    if (value >= 0.4) return '#d49b00';
+    if (value >= 0.2) return '#9a7777';
+
+    return '#c9baba';
+}
+
 // 生徒管理情報を取得してから、生徒管理モーダルを開く。
 async function openStudentManageModal() {
     try {
@@ -785,6 +979,7 @@ document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEv
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
 document.querySelector('[data-action="student-manage"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openStudentManageModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
+document.querySelector('[data-action="related-network"]').addEventListener('click', () => { closeMenu(); openRelatedNetworkModal(); });
 document.querySelector('[data-action="refresh"]').addEventListener('click', () => {
     document.getElementById('menuPanel').classList.remove('is-open');
     console.info('[ui] manual refresh clicked');
