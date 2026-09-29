@@ -9,6 +9,7 @@ const state = {
     nearestNames: {},
     deviceStatuses: {},
     mlBehavior: {},
+    mlAnomalies: {},
     mlRelations: {},
     mlUpdatedAt: 0,
     mlChildSignature: '',
@@ -23,6 +24,13 @@ const WARNING_DECREASE_PERCENT = 60;
 const NORMAL_INCREASE_PERCENT = 20;
 const DEVICE_STATUS_STALE_MS = 60_000;
 const ML_REFRESH_INTERVAL_MS = 30_000;
+const ANOMALY_FEATURE_LABELS = {
+    steps_10min: '10分間歩数',
+    activity_mean_proxy: '活動量',
+    acc_std: '加速度のばらつき',
+    gyro_mean: '角速度',
+    mag_mean: '地磁気'
+};
 
 // フロントをAPIサーバーと別ホストで配信する場合の接続先。
 // 同じFastAPIサーバーから配信する場合は '' にすると相対URLになります。
@@ -163,10 +171,16 @@ async function loadMlResults(force = false) {
     }
 
     const nextBehavior = {};
+    const nextAnomalies = {};
     const nextRelations = {};
 
     await Promise.all(childIds.map(async (childId) => {
-        nextBehavior[childId] = await apiRequestOptional(`/api/ml/behavior/${childId}`);
+        const [behavior, anomaly] = await Promise.all([
+            apiRequestOptional(`/api/ml/behavior/${childId}`),
+            apiRequestOptional(`/api/ml/anomaly/${childId}`)
+        ]);
+        nextBehavior[childId] = behavior;
+        nextAnomalies[childId] = anomaly;
     }));
 
     const relationRequests = [];
@@ -185,6 +199,7 @@ async function loadMlResults(force = false) {
     await Promise.all(relationRequests);
 
     state.mlBehavior = nextBehavior;
+    state.mlAnomalies = nextAnomalies;
     state.mlRelations = nextRelations;
     state.mlUpdatedAt = now;
     state.mlChildSignature = signature;
@@ -381,6 +396,10 @@ function renderStudents() {
         card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
         card.querySelector('.student-status').innerHTML = statusHtml;
         const behavior = state.mlBehavior[child.child_id];
+        const anomaly = state.mlAnomalies[child.child_id];
+        const anomalyWarnings = anomaly?.comparisons
+            ? Object.entries(anomaly.comparisons).filter(([, comparison]) => comparison.warning)
+            : [];
         const relationRows = state.children
             .filter((other) => other.child_id !== child.child_id)
             .map((other) => {
@@ -395,6 +414,15 @@ function renderStudents() {
             }).join('');
 
         card.querySelector('.ml-summary').innerHTML = `
+            ${anomaly?.warning ? `
+                <article class="warning-item" role="alert">
+                    <strong>⚠ 普段と異なる状態を検出</strong>
+                    <span>直近10分の特徴量が個人ベースラインから10%以上離れています。</span>
+                    <small>${anomalyWarnings.map(([feature, comparison]) =>
+                        `${escapeHtml(ANOMALY_FEATURE_LABELS[feature] || feature)} ${formatMlNumber(comparison.relative_diff_percent, 1)}%`
+                    ).join(' / ')}</small>
+                </article>
+            ` : ''}
             <div class="ml-section">
                 <h3>最新の推論</h3>
                 ${behavior ? `

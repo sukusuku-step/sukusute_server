@@ -10,10 +10,84 @@ import sukusute_machine_learning.utils.relatedness
 
 import sukusute_server.database_models
 
+ANOMALY_THRESHOLD_RATIO = 0.10
+ANOMALY_EPS = 1e-6
+latest_anomaly_results: dict[int, dict] = {}
+
+def calculate_current_10min_features(records) -> dict[str, float]:
+    steps = np.asarray([record.steps for record in records], dtype=np.float32)
+    step_diff = np.diff(steps, prepend=steps[0])
+    step_diff = np.clip(step_diff, 0, None)
+
+    ax = np.asarray([record.ax for record in records], dtype=np.float32)
+    ay = np.asarray([record.ay for record in records], dtype=np.float32)
+    az = np.asarray([record.az for record in records], dtype=np.float32)
+    gx = np.asarray([record.gx for record in records], dtype=np.float32)
+    gy = np.asarray([record.gy for record in records], dtype=np.float32)
+    gz = np.asarray([record.gz for record in records], dtype=np.float32)
+    mx = np.asarray([record.mx for record in records], dtype=np.float32)
+    my = np.asarray([record.my for record in records], dtype=np.float32)
+    mz = np.asarray([record.mz for record in records], dtype=np.float32)
+
+    acc_mag = np.sqrt(ax ** 2 + ay ** 2 + az ** 2)
+    gyro_mag = np.sqrt(gx ** 2 + gy ** 2 + gz ** 2)
+    mag_mag = np.sqrt(mx ** 2 + my ** 2 + mz ** 2)
+
+    return {
+        "steps_10min": float(np.nansum(step_diff)),
+        "activity_mean_proxy": float(np.nanmean(acc_mag)),
+        "acc_std": float(np.nanstd(acc_mag, ddof=1)),
+        "gyro_mean": float(np.nanmean(gyro_mag)),
+        "mag_mean": float(np.nanmean(mag_mag))
+    }
+
+def compare_current_with_baseline(current_features: dict[str, float],
+                                  baseline_result: dict | None,
+                                  threshold_ratio: float = ANOMALY_THRESHOLD_RATIO) -> dict | None:
+    if not baseline_result:
+        return None
+
+    comparisons = {}
+    warning = False
+
+    for feature, current_value in current_features.items():
+        baseline_feature = baseline_result.get(feature)
+        if not baseline_feature:
+            continue
+
+        baseline_median = float(baseline_feature["median"])
+        baseline_mad_scale = float(baseline_feature["mad_scale"])
+
+        if not np.isfinite(current_value) or not np.isfinite(baseline_median):
+            continue
+
+        reference_value = abs(baseline_median)
+        if reference_value < ANOMALY_EPS:
+            reference_value = max(abs(baseline_mad_scale), ANOMALY_EPS)
+
+        relative_diff = abs(current_value - baseline_median) / reference_value
+        feature_warning = relative_diff >= threshold_ratio
+        warning = warning or feature_warning
+
+        comparisons[feature] = {
+            "current": float(current_value),
+            "baseline_median": baseline_median,
+            "baseline_mad_scale": baseline_mad_scale,
+            "relative_diff": float(relative_diff),
+            "relative_diff_percent": float(relative_diff * 100.0),
+            "warning": bool(feature_warning)
+        }
+
+    return {
+        "warning": bool(warning),
+        "threshold_ratio": float(threshold_ratio),
+        "threshold_percent": float(threshold_ratio * 100.0),
+        "comparisons": comparisons
+    }
+
 async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                         child_id: int,
                         distance_child_ids: list[int]) -> None:
-
     # 10秒毎でこのml.pyのバッググランドタスクは呼ばれる
     # 10分単位のデータに対する実行のための（児童ごとに見て）10分以下のスパンでの再実行は早期returnする
     if await dbsession.scalar(
@@ -37,11 +111,13 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     single_records = (await dbsession.execute(single_stmt)).scalars().all()
 
     # 直近10分間の計測データとして取得
-    single_records_10min = [record for record in single_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=11)][:6000]
+    single_records_10min = [record for record in single_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=11)][-6000:]
     if len(single_records_10min) < 6000:
         return
 
-    # behavior_inferへの入力形式を作成
+    current_10min_features = calculate_current_10min_features(single_records_10min)
+
+    # behavior_inferへの入力形式を作成（過去10分単位）
     behavior_input = np.fromiter(((
         record.steps,
         record.ax, record.ay, record.az,
@@ -53,7 +129,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     behavior_result = sukusute_machine_learning.inference.predict_behavior.behavior_infer(behavior_input)
     del behavior_input, single_records_10min
 
-    # activity_inferへの入力形式を作成
+    # activity_inferへの入力形式を作成（1時間までの取れる分の過去データ）
     single_records_1h = [record for record in single_records if record.date > datetime.datetime.now() - datetime.timedelta(hours=1)]
     activity_input = np.fromiter(((
         record.steps,
@@ -66,7 +142,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     activity_result = sukusute_machine_learning.inference.predict_behavior.activity_infer(activity_input)
     del activity_input, single_records_1h
 
-    # build_baselineへの入力形式を作成
+    # build_baselineへの入力形式を作成（取れる分の全ての過去データ）
     baseline_input = np.fromiter(((
         record.steps,
         record.ax, record.ay, record.az,
@@ -79,6 +155,16 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(baseline_input)["features"]
     except (ValueError, TypeError):
         baseline_result = None
+
+    anomaly_result = compare_current_with_baseline(current_10min_features, baseline_result)
+    if anomaly_result:
+        latest_anomaly_results[child_id] = {
+            "date": datetime.datetime.now().isoformat(),
+            **anomaly_result
+        }
+    else:
+        latest_anomaly_results.pop(child_id, None)
+
     del baseline_input, single_records
 
     # 歩数・加速度・活動量・ベースラインの評価結果をDBに保存
@@ -113,7 +199,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     distance_records = (await dbsession.execute(distance_stmt)).scalars().all()
 
     # 直近10分間の計測データとして取得
-    # それぞれの相手デバイスに対してdistance_inferへの入力形式を作成
+    # それぞれの相手デバイスに対してdistance_inferへの入力形式を作成（過去10分単位）
     distance_records_10min = [record for record in distance_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=11)]
 
     # 計測を行っている全ての相手デバイスに対して計算する
@@ -126,7 +212,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         # 距離データ不足の相手がいたらその相手だけ飛ばす
         if len(child_distance_records_10min) < 6000:
             continue
-        
+
         distance_input = np.fromiter((record.distance for record in child_distance_records_10min), dtype=np.float32)
 
         # それぞれの相手デバイスに対して直近10分間の相対距離の計測データから分類ラベルを推定
@@ -141,7 +227,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
             .order_by(sukusute_server.database_models.ChildDistanceEvaluationHistory.date.asc())
         distance_evalhist_records = (await dbsession.execute(distance_evalhist_stmt)).scalars().all()
 
-        # 過去の相対距離の分類ラベルの推論結果から関連度スコアを算出
+        # 過去全ての相対距離の分類ラベルの推論結果からある児童対児童の関連度スコアを算出
         relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(distance_evalhist_records)
 
         # 距離・関係度スコアの評価結果をDBに保存

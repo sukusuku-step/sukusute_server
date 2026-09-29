@@ -1195,6 +1195,17 @@ async def get_ml_behavior_result(
             baseline_mag_mean_mad_scale=record.baseline_mag_mean_mad_scale
     )
 
+@app.get("/api/ml/anomaly/{child_id}", tags=["API"])
+async def get_ml_anomaly_result(child_id: int):
+    """ 単独児童に関する最新のベースライン異常判定結果を返却する。 """
+    result = ml.latest_anomaly_results.get(child_id)
+    if not result:
+        raise fastapi.exceptions.HTTPException(404, "Anomaly result not found.")
+    return {
+        "status": "ok",
+        **result
+    }
+
 @app.get("/api/ml/relation", tags=["API"])
 async def get_ml_relation_result(
         dbsession: database_models.SessionDep,
