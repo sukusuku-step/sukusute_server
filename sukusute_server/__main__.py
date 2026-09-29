@@ -9,7 +9,7 @@ def run_backend(host: str = "0.0.0.0", port: int = 8000):
         import uvicorn
         import sukusute_server
         print(f"サーバを起動中... http://{host}:{port}")
-        uvicorn.run(sukusute_server.app, host=host, port=port)
+        uvicorn.run(sukusute_server.app, host=host, port=port, access_log=True)
     except ImportError as e:
         print(f"起動エラー: 依存関係がインストールされていません - {e}")
         print("pyproject.tomlの依存関係をインストールしてください:")
