@@ -5,6 +5,9 @@ const state = {
     selectedClassId: null,
     children: [],
     steps: {},
+    stepIncreaseRanking: [],
+    nearestNames: {},
+    deviceStatuses: {},
     selectedDate: new Date(),
     // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
     teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
@@ -14,6 +17,7 @@ const state = {
 const STEP_WARNING_THRESHOLD = 3000;
 const WARNING_DECREASE_PERCENT = 60;
 const NORMAL_INCREASE_PERCENT = 20;
+const DEVICE_STATUS_STALE_MS = 60_000;
 
 let refreshTimer = null;
 let refreshInProgress = false;
@@ -80,7 +84,18 @@ async function apiRequest(url, options = {}) {
     const headers = { ...(options.headers || {}) };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     if (options.body) headers['Content-Type'] = 'application/json';
-    const response = await fetch(url, { ...options, headers });
+    // APIの応答が止まって画面の更新全体が待ち続けないようにする。
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let response;
+    try {
+        response = await fetch(url, { ...options, headers, signal: controller.signal });
+    } catch (error) {
+        if (controller.signal.aborted) throw new Error(`API応答がタイムアウトしました: ${url}`);
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
     const body = await response.json().catch(() => ({}));
     if (response.status === 401 && state.token) {
         localStorage.removeItem('sukusuteToken');
@@ -157,23 +172,57 @@ async function loadDashboard() {
     try {
         const children = await apiRequest(`/api/children${classQuery}`);
         state.children = children.children || [];
-        const stats = await apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`);
-        state.steps = {};
-        for (const item of stats.student_ranking || []) state.steps[item.child_id] = item.steps || 0;
+        state.stepIncreaseRanking = [];
+        // 歩数や端末状態のAPIを待たず、DBの児童一覧を先に表示する。
         renderStudents();
         renderRanking();
-        renderWarnings(stats.warnings || []);
+        // 歩数と端末状態は、取得できた方から独立して画面へ反映する。
+        const refreshResults = await Promise.allSettled([
+            apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`).then((stats) => {
+                state.steps = Object.fromEntries(
+                    (stats.student_ranking || []).map((item) => [item.child_id, item.steps || 0])
+                );
+                state.stepIncreaseRanking = stats.step_increase_ranking || [];
+                state.nearestNames = Object.fromEntries(
+                    (stats.nearest_children || []).map((item) => [item.child_id, item.name])
+                );
+                renderStudents();
+                renderRanking();
+                renderWarnings(stats.warnings || []);
+            }),
+            apiRequest('/api/device_status').then((deviceStatuses) => {
+                state.deviceStatuses = Object.fromEntries(
+                    (deviceStatuses.devices || []).map((item) => [item.child_id, item])
+                );
+                renderStudents();
+            })
+        ]);
+        const failedRefresh = refreshResults.find((result) => result.status === 'rejected');
+        if (failedRefresh) throw failedRefresh.reason;
         setMessage('refreshMessage', `最終更新 ${new Date().toLocaleTimeString()}`);
         console.info('[ui] dashboard refresh completed', {
             children: state.children.length,
             steps: Object.keys(state.steps).length
         });
     } catch (error) {
+        if (!state.children.length) {
+            document.getElementById('studentGrid').innerHTML =
+                `<div class="loading">児童データを取得できませんでした: ${escapeHtml(error.message)}</div>`;
+        }
         setMessage('refreshMessage', error.message);
         console.error('[ui] dashboard refresh failed', error);
     } finally {
         refreshInProgress = false;
     }
+}
+
+// RSSIを携帯電話のアンテナ表示に合わせて4段階に変換する。
+function getWifiSignalLevel(wifiRssi) {
+    if (wifiRssi >= -55) return 4;
+    if (wifiRssi >= -67) return 3;
+    if (wifiRssi >= -75) return 2;
+    if (wifiRssi >= -85) return 1;
+    return 0;
 }
 
 // 児童を歩数順に並べ、歩数カードをHTMLへ描画する。カードはDOMを使い回し、歩数だけスロット風に更新する。
@@ -183,12 +232,25 @@ function renderStudents() {
         grid.innerHTML = '<div class="loading">このクラスに児童データがありません</div>';
         return;
     }
+    grid.querySelector('.loading')?.remove();
     const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
     const visibleIds = new Set(sorted.map((child) => child.child_id));
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         if (!visibleIds.has(Number(card.dataset.studentCard))) card.remove();
     });
     sorted.forEach((child, index) => {
+        const deviceStatus = state.deviceStatuses[child.child_id];
+        const statusAge = deviceStatus ? Date.now() - Date.parse(deviceStatus.updated_at) : Infinity;
+        const isDeviceStatusFresh = statusAge >= 0 && statusAge < DEVICE_STATUS_STALE_MS;
+        const currentDeviceStatus = isDeviceStatusFresh ? deviceStatus : null;
+        const wifiSignalLevel = currentDeviceStatus ? getWifiSignalLevel(currentDeviceStatus.wifi_rssi) : 0;
+        const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : 'N/A';
+        const wifiDescription = currentDeviceStatus
+            ? `Wi-Fi電波強度 ${wifiSignalLevel}/4、${wifiRssiLabel}`
+            : 'Wi-Fi電波強度 N/A';
+        const wifiBars = [1, 2, 3, 4].map((barNumber) =>
+            `<span class="wifi-signal-bar${barNumber <= wifiSignalLevel ? ' is-active' : ''}"></span>`
+        ).join('');
         const steps = state.steps[child.child_id] || 0;
         const warning = steps > 0 && steps < STEP_WARNING_THRESHOLD;
         const isTeacher = isTeacherFlag(child.child_id);
@@ -204,9 +266,29 @@ function renderStudents() {
             card.innerHTML = `
                 <div class="student-name"></div>
                 <div class="student-steps">歩数：<strong class="step-number"></strong></div>
+                <div class="device-status"></div>
                 <div class="student-status"></div>`;
         }
+        card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
         card.querySelector('.student-name').innerHTML = nameHtml;
+        const nearestName = state.nearestNames[child.child_id];
+        let nearestPerson = card.querySelector('.nearest-person');
+        if (nearestName) {
+            if (!nearestPerson) {
+                nearestPerson = document.createElement('div');
+                nearestPerson.className = 'nearest-person';
+                card.querySelector('.student-steps').insertAdjacentElement('afterend', nearestPerson);
+            }
+            nearestPerson.textContent = `近くにいる人：${nearestName}`;
+        } else {
+            nearestPerson?.remove();
+        }
+        card.querySelector('.device-status').innerHTML = `
+            <span>BAT : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'N/A'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
+            <span class="wifi-status" role="img" aria-label="${wifiDescription}" title="${wifiDescription}">
+                <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
+                <span>Wi-Fi ${wifiRssiLabel}</span>
+            </span>`;
         card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
         card.querySelector('.student-status').innerHTML = statusHtml;
         const referenceNode = grid.children[index];
@@ -215,13 +297,16 @@ function renderStudents() {
     });
 }
 
-// 現在表示中の児童から歩数上位5名をランキングへ描画する。
+// 現在表示中の児童から直近1分の歩数増加上位5名を描画する。
 function renderRanking() {
-    const ranking = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0)).slice(0, 5);
+    const visibleChildIds = new Set(state.children.map((child) => child.child_id));
+    const ranking = state.stepIncreaseRanking
+        .filter((item) => visibleChildIds.has(item.child_id))
+        .slice(0, 5);
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
-        const child = ranking[index];
-        item.innerHTML = child
-            ? `<span>${index + 1}.</span><strong>${escapeHtml(child.name || `児童${child.child_id}`)}</strong>`
+        const entry = ranking[index];
+        item.innerHTML = entry
+            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `児童${entry.child_id}`)}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
 }

@@ -91,6 +91,8 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `PATCH` | `/api/classes/{class_id}` | クラス変更 | クラス名を変更する |
 | `PATCH` | `/api/children/{child_id}/class` | 所属クラス変更 | 児童を指定クラスへ移動する。class_idをnullにすると未所属に戻す |
 | `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
+| `POST` | `/api/device_status` | M5端末状態受信 | バッテリー残量とWiFi RSSIをメモリ上の最新値として保持する |
+| `GET` | `/api/device_status` | M5端末状態一覧 | 受信済みのバッテリー残量とWiFi RSSIを児童ID順で返す |
 | `POST` | `/api/push_csv/{child_id}` | センサーデータCSV受信 | 指定児童の歩数、9軸センサーデータ、相対距離を保存する |
 | `GET` | `/api/children?class_id={class_id}` | 児童一覧 | 登録済み児童を `child_id` 順で返す。class_id指定時はクラスで絞り込む |
 | `GET` | `/api/children/search?name={name}` | 児童検索・登録 | 名前を完全一致で検索し、なければ新規作成する |
@@ -289,6 +291,7 @@ timestamp,steps,ax,ay,az,gx,gy,gz,mx,my,mz,start,Distance_{child_id},Distance_{c
 - `avg_steps`: 登録児童数で割った整数平均
 - `goal_met_count`: 10,000歩以上の児童数
 - `student_ranking`: 歩数の降順。歩数データがない児童も0歩で含む
+- `step_increase_ranking`: 各児童の最新測定値と1分前の測定値との差の降順。測定間隔が90秒を超える場合や比較データがない場合は0歩
 - `steps_by_hour`: 0時から23時までの時間別歩数
 - `warnings`: 過去7日間の平均の50%未満で、過去データが3件以上ある児童
 - `walk_time`、`calories`、`step_change`、`step_change_percent`: 全体の歩数から計算した値

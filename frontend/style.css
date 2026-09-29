@@ -181,37 +181,46 @@ body {
 
 .student-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, 220px);
     gap: 14px 8px;
+    align-content: start;
 }
 
 .student-card {
-    min-height: 111px;
-    padding: 10px 10px 8px;
-    border: 2px solid var(--line);
-    border-radius: 7px;
-    background: var(--card-pink);
+    width: 220px;
+    height: 220px;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    border: 8px solid #858b8d;
+    border-radius: 8px;
+    background: #080a0b;
+    color: #f4f5f5;
+    text-align: center;
     cursor: pointer;
     transition: transform .15s ease, box-shadow .15s ease;
 }
 
-.student-card:nth-child(4n + 1) {
-    background: var(--card-yellow);
+.student-card.has-telemetry {
+    border-color: #92999b;
 }
 
 .student-card:hover {
     transform: translateY(-2px);
-    box-shadow: 3px 3px 0 #ddaaac;
+    box-shadow: 3px 3px 0 #555b5d;
 }
 
 .student-name {
-    margin-bottom: 12px;
+    max-width: 100%;
     font-size: 18px;
     font-weight: 700;
 }
 
 .student-steps {
-    margin-left: 8px;
     font-size: 14px;
     font-weight: 700;
 }
@@ -220,13 +229,78 @@ body {
     font-size: 16px;
 }
 
+.nearest-person {
+    max-width: 100%;
+    color: #c3c8ca;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
+.device-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    color: #c3c8ca;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.device-warning {
+    display: inline-grid;
+    width: 15px;
+    height: 15px;
+    margin-left: 4px;
+    place-items: center;
+    border-radius: 50%;
+    background: #ffd43b;
+    color: #111;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.wifi-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.wifi-signal {
+    display: inline-flex;
+    flex: 0 0 18px;
+    align-items: flex-end;
+    gap: 2px;
+    width: 18px;
+    height: 14px;
+}
+
+.wifi-signal-bar {
+    display: block;
+    width: 3px;
+    border-radius: 1px 1px 0 0;
+    background: #c4a9aa;
+}
+
+.wifi-signal-bar:nth-child(1) { height: 4px; }
+.wifi-signal-bar:nth-child(2) { height: 7px; }
+.wifi-signal-bar:nth-child(3) { height: 10px; }
+.wifi-signal-bar:nth-child(4) { height: 13px; }
+
+.wifi-signal-bar.is-active {
+    background: #a8e63a;
+}
+
 .step-number {
     display: inline-block;
     font-variant-numeric: tabular-nums;
 }
 
 .step-number.step-spin {
-    color: #1c8f3a;
+    color: #a8e63a;
     animation: step-spin-shake .08s linear infinite;
 }
 
@@ -252,7 +326,7 @@ body {
 }
 
 .student-status {
-    margin: 17px 0 0 11px;
+    margin: 0;
     font-size: 10px;
     font-weight: 700;
 }
@@ -262,7 +336,7 @@ body {
 }
 
 .student-status.normal {
-    margin-top: 18px;
+    color: #c3c8ca;
 }
 
 /* ランキングと歩数警告 */
