@@ -337,10 +337,14 @@ async function loadDashboard() {
         });
     } catch (error) {
         if (!state.children.length) {
-            document.getElementById('studentGrid').innerHTML =
-                `<div class="loading">児童データを取得できませんでした: ${escapeHtml(error.message)}</div>`;
+            const studentGrid = document.getElementById('studentGrid');
+
+            if (studentGrid) {
+                studentGrid.innerHTML = '<div class="loading">児童データを取得できませんでした。</div>';
+            }
         }
-        setMessage('refreshMessage', error.message);
+
+        setMessage('refreshMessage', 'ステータスの更新に失敗しました');
         console.error('[ui] dashboard refresh failed', error);
     } finally {
         refreshInProgress = false;
