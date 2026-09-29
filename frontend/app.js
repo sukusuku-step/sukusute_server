@@ -412,12 +412,12 @@ function renderStudents() {
                 nearestPerson.className = 'nearest-person';
                 card.querySelector('.student-steps').insertAdjacentElement('afterend', nearestPerson);
             }
-            nearestPerson.textContent = `近くにいる人：${nearestName}`;
+            nearestPerson.textContent = `最も近くにいる人：${nearestName}`;
         } else {
             nearestPerson?.remove();
         }
         card.querySelector('.device-status').innerHTML = `
-            <span>BAT : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'データなし'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
+            <span>BATTERY : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'データなし'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
             <span class="wifi-status" role="img" aria-label="${wifiDescription}" title="${wifiDescription}">
                 <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
                 <span>Wi-Fi ${wifiRssiLabel}</span>
@@ -457,7 +457,7 @@ function renderStudents() {
                 return `
                     <div class="relation-score-row">
                         <strong>${escapeHtml(other.name || `児童${other.child_id}`)}</strong>
-                        <span>距離状態: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
+                        <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                         <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                         <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
                     </div>`;
@@ -466,38 +466,38 @@ function renderStudents() {
         card.querySelector('.ml-summary').innerHTML = `
             ${anomaly?.warning ? `
                 <article class="warning-item" role="alert">
-                    <strong>⚠ 普段と異なる状態を検出</strong>
-                    <span>直近10分の特徴量が普段の値から10%以上離れています。</span>
+                    <strong>⚠ 普段と異なる状態を検出しました</strong>
+                    <span>直近10分の特徴量がベースラインから10%以上離れています。</span>
                     <small>${anomalyWarnings.map(([feature, comparison]) =>
                         escapeHtml(formatAnomalyChange(feature, comparison))
                     ).join('<br>')}</small>
                 </article>
             ` : ''}
             <div class="ml-section">
-                <h3>最新の推論</h3>
+                <h3>最新のステータス</h3>
                 ${behavior ? `
                     <div class="ml-result-grid">
-                        <span>姿勢状態</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}</small>
-                        <span>走行状態</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}</small>
-                        <span>活動量</span><strong>${escapeHtml(behavior.activity_level)}</strong><small>${formatConfidence(behavior.activity_confidence)}</small>
-                    </div>` : '<p class="ml-empty">推論結果はまだありません</p>'}
+                        <span>姿勢状態</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}での推論</small>
+                        <span>走行状態</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}での推論</small>
+                        <span>活動量</span><strong>${escapeHtml(behavior.activity_level)} / 5</strong><small>${formatConfidence(behavior.activity_confidence)}での推論</small>
+                    </div>` : '<p class="ml-empty">得られたステータスはまだありません</p>'}
             </div>
-            <details class="baseline-details" ${state.mlDetailOpenStates[child.child_id]?.baseline ? 'open' : ''}>
-                <summary>普段の値</summary>
-                ${behavior ? `
-                    <div class="baseline-grid">
-                        <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / MAD ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
-                        <span>活動量</span><span>中央値 ${formatMlNumber(behavior.baseline_activity_mean_proxy_median)} / MAD ${formatMlNumber(behavior.baseline_activity_mean_proxy_mad_scale)}</span>
-                        <span>加速度</span><span>中央値 ${formatMlNumber(behavior.baseline_acc_std_median)} / MAD ${formatMlNumber(behavior.baseline_acc_std_mad_scale)}</span>
-                        <span>ジャイロ</span><span>中央値 ${formatMlNumber(behavior.baseline_gyro_mean_median)} / MAD ${formatMlNumber(behavior.baseline_gyro_mean_mad_scale)}</span>
-                        <span>地磁気</span><span>中央値 ${formatMlNumber(behavior.baseline_mag_mean_median)} / MAD ${formatMlNumber(behavior.baseline_mag_mean_mad_scale)}</span>
-                    </div>` : '<p class="ml-empty">ベースライン未算出</p>'}
-            </details>
             <details class="relation-details" ${state.mlDetailOpenStates[child.child_id]?.relation ? 'open' : ''}>
                 <summary>他児童との距離状態・関連度スコア</summary>
                 <div class="relation-score-list">
                     ${relationRows || '<p class="ml-empty">比較対象の児童がいません</p>'}
                 </div>
+            </details>
+            <details class="baseline-details" ${state.mlDetailOpenStates[child.child_id]?.baseline ? 'open' : ''}>
+                <summary>この児童の普段のステータス（ベースライン）</summary>
+                ${behavior ? `
+                    <div class="baseline-grid">
+                        <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / ばらつき ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
+                        <span>活動量</span><span>中央値 ${formatMlNumber(behavior.baseline_activity_mean_proxy_median)} / ばらつき ${formatMlNumber(behavior.baseline_activity_mean_proxy_mad_scale)}</span>
+                        <span>加速度</span><span>中央値 ${formatMlNumber(behavior.baseline_acc_std_median)} / ばらつき ${formatMlNumber(behavior.baseline_acc_std_mad_scale)}</span>
+                        <span>ジャイロ</span><span>中央値 ${formatMlNumber(behavior.baseline_gyro_mean_median)} / ばらつき ${formatMlNumber(behavior.baseline_gyro_mean_mad_scale)}</span>
+                        <span>地磁気</span><span>中央値 ${formatMlNumber(behavior.baseline_mag_mean_median)} / ばらつき ${formatMlNumber(behavior.baseline_mag_mean_mad_scale)}</span>
+                    </div>` : '<p class="ml-empty">ベースラインは未算出です</p>'}
             </details>`;
 
         const baselineDetails = card.querySelector('.baseline-details');
