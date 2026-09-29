@@ -18,7 +18,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
-import sqlalchemy.sql.functions
 from sqlalchemy import and_, or_
 
 from sukusute_server import http_models, database_models, ml
@@ -296,8 +295,10 @@ async def push_csv(
     for child in distance_children:
         parsed_distance_children.append(int(child[9:]))
     for row in parsed_csv:
-        timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, start, *distances = row
+        timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, _, *distances = row
         calculated_time = start_time + datetime.timedelta(seconds=float(timestamp))
+
+        # CSVから解析した計測データをDBに保存
         dbsession.add(database_models.SingleChildData(
             child_id=child_id,
             date=calculated_time,
@@ -306,6 +307,8 @@ async def push_csv(
             gx=float(gx), gy=float(gy), gz=float(gz),
             mx=float(mx), my=float(my), mz=float(mz)
         ))
+
+        # 相対距離データもDBに保存
         for i, distance in enumerate(distances):
             distance_obj = database_models.ChildDistanceData(
                 date=calculated_time,
@@ -313,9 +316,10 @@ async def push_csv(
             )
             distance_obj.children_ids = (child_id, parsed_distance_children[i])
             dbsession.add(distance_obj)
+    
     await dbsession.commit()
 
-    # 機械学習のタスクを作成する
+    # 機械学習のバックグラウンドタスクを作成する（api/push_csvのAPIがM5側で叩かれる度に作成される）
     background_tasks.add_task(ml.evaluate_data, dbsession, child_id, parsed_distance_children)
 
     return http_models.Result(status="ok")
