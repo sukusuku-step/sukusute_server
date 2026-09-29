@@ -798,6 +798,37 @@ body {
     text-align: center;
 }
 
+.readonly-value {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    padding: 6px 9px;
+    border: 1px solid #c7b6b7;
+    border-radius: 4px;
+    background: #eee7e7;
+    color: #6b5556;
+    font-weight: 700;
+}
+
+.menu-user {
+    display: grid;
+    gap: 2px;
+    margin: 0 0 12px;
+    padding: 10px;
+    border-bottom: 1px solid #694344;
+    color: #fff;
+}
+
+.menu-user span {
+    font-size: 10px;
+    opacity: 0.8;
+}
+
+.menu-user strong {
+    overflow-wrap: anywhere;
+    font-size: 14px;
+}
+
 .ml-summary {
     display: grid;
     gap: 7px;

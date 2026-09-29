@@ -72,6 +72,12 @@
     <!-- メニューから開く操作パネル -->
     <aside id="menuPanel" class="menu-panel" aria-hidden="true">
         <button id="closeMenuButton" class="close-menu" type="button" aria-label="メニューを閉じる">×</button>
+
+        <div class="menu-user">
+            <span>ログイン中</span>
+            <strong id="menuUsername">-</strong>
+        </div>
+
         <button data-action="related-network">関係ネットワーク図を見る</button>
         <button data-action="relation">相関関係を一覧で見る</button>
         <button data-action="class">所属クラスの管理</button>
@@ -96,7 +102,7 @@
             <h2>アカウント削除</h2>
             <p class="modal-caption">削除すると、同じユーザー名で再登録するまでログインできません。この操作は取り消せません。</p>
             <form id="accountDeleteForm" class="delete-form">
-                <label>ユーザー名<input id="deleteUsername" required autocomplete="username"></label>
+                <label>ユーザー名<div id="deleteUsernameDisplay" class="readonly-value"></div></label>
                 <label>現在のパスワード<input id="deletePassword" type="password" required autocomplete="current-password"></label>
                 <button class="danger-button" type="submit">アカウントを削除する</button>
                 <div id="deleteMessage" class="form-message"></div>

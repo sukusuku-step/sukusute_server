@@ -256,12 +256,31 @@ async function login(username, password) {
 function showApp() {
     document.getElementById('loginView').classList.add('is-hidden');
     document.getElementById('appView').classList.remove('is-hidden');
+
+    const menuUsername = document.getElementById('menuUsername');
+    if (menuUsername) {
+        menuUsername.textContent = state.teacher?.username || '';
+    }
+}
+
+function closeMenu() {
+    const menuPanel = document.getElementById('menuPanel');
+
+    menuPanel.classList.remove('is-open');
+    menuPanel.setAttribute('aria-hidden', 'true');
 }
 
 // ログイン画面を表示し、認証が必要な画面を隠す。
 function showLogin() {
+    closeMenu(); // ログアウト時は必ずメニュー欄を閉じる
+
     document.getElementById('loginView').classList.remove('is-hidden');
     document.getElementById('appView').classList.add('is-hidden');
+
+    const menuUsername = document.getElementById('menuUsername');
+    if (menuUsername) {
+        menuUsername.textContent = '';
+    }
 }
 
 // クラス一覧を読み込み、選択欄を更新してから児童データを再取得する。
@@ -379,7 +398,7 @@ function renderStudents() {
         const isDeviceStatusFresh = statusAge >= 0 && statusAge < DEVICE_STATUS_STALE_MS;
         const currentDeviceStatus = isDeviceStatusFresh ? deviceStatus : null;
         const wifiSignalLevel = currentDeviceStatus ? getWifiSignalLevel(currentDeviceStatus.wifi_rssi) : 0;
-        const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : '接続なし';
+        const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : ' : 接続なし';
         const wifiDescription = currentDeviceStatus
             ? `Wi-Fi電波強度 ${wifiSignalLevel}/4、${wifiRssiLabel}`
             : 'Wi-Fi電波強度 接続なし';
@@ -683,7 +702,9 @@ function closeModal() {
 
 // 現在ログイン中のユーザー名を初期値にして削除画面を開く。
 function openAccountDeleteModal() {
-    document.getElementById('deleteUsername').value = state.teacher?.username || '';
+    document.getElementById('deleteUsernameDisplay').textContent =
+        state.teacher?.username || '';
+
     document.getElementById('deletePassword').value = '';
     setMessage('deleteMessage', '');
     openModal('accountDeleteModal');
@@ -740,12 +761,25 @@ document.getElementById('showRegisterButton').addEventListener('click', () => {
     document.getElementById('loginForm').classList.add('is-hidden');
     document.getElementById('registerForm').classList.remove('is-hidden');
 });
+
 document.getElementById('showLoginButton').addEventListener('click', () => {
     document.getElementById('registerForm').classList.add('is-hidden');
     document.getElementById('loginForm').classList.remove('is-hidden');
 });
-document.getElementById('menuButton').addEventListener('click', () => document.getElementById('menuPanel').classList.add('is-open'));
-document.getElementById('closeMenuButton').addEventListener('click', () => document.getElementById('menuPanel').classList.remove('is-open'));
+
+// 未ログイン時にはメニューを開かせない
+document.getElementById('menuButton').addEventListener('click', () => {
+    if (!state.token) {
+        closeMenu();
+        return;
+    }
+
+    const menuPanel = document.getElementById('menuPanel');
+    menuPanel.classList.add('is-open');
+    menuPanel.setAttribute('aria-hidden', 'false');
+});
+
+document.getElementById('closeMenuButton').addEventListener('click', closeMenu);
 document.getElementById('openClassButton').addEventListener('click', () => { openClassModal(); });
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
@@ -757,10 +791,23 @@ document.querySelector('[data-action="refresh"]').addEventListener('click', () =
     loadDashboard();
 });
 document.querySelector('[data-action="account-delete"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openAccountDeleteModal(); });
+
 document.querySelector('[data-action="logout"]').addEventListener('click', async () => {
-    try { await apiRequest('/api/auth/logout', { method: 'POST' }); } catch (error) { console.error(error); }
-    localStorage.removeItem('sukusuteToken'); state.token = null; showLogin();
+    try {
+        await apiRequest('/api/auth/logout', { method: 'POST' });
+    } catch (error) {
+        console.error(error);
+    }
+
+    closeMenu();
+
+    localStorage.removeItem('sukusuteToken');
+    state.token = null;
+    state.teacher = null;
+
+    showLogin();
 });
+
 document.getElementById('classSelector').addEventListener('change', (event) => {
     state.selectedClassId = Number(event.target.value) || null;
     loadDashboard();
@@ -831,7 +878,7 @@ document.getElementById('accountDeleteForm').addEventListener('submit', async (e
         await apiRequest('/api/auth/account', {
             method: 'DELETE',
             body: JSON.stringify({
-                username: document.getElementById('deleteUsername').value,
+                username: state.teacher?.username || '',
                 password: document.getElementById('deletePassword').value
             })
         });
