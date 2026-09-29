@@ -11,6 +11,7 @@ const state = {
     mlBehavior: {},
     mlAnomalies: {},
     mlRelations: {},
+    mlDetailOpenStates: {},
     mlUpdatedAt: 0,
     mlChildSignature: '',
     selectedDate: new Date(),
@@ -395,11 +396,32 @@ function renderStudents() {
             </span>`;
         card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
         card.querySelector('.student-status').innerHTML = statusHtml;
+
         const behavior = state.mlBehavior[child.child_id];
         const anomaly = state.mlAnomalies[child.child_id];
+
+        const currentBaselineDetails = card.querySelector('.baseline-details');
+        const currentRelationDetails = card.querySelector('.relation-details');
+
+        if (!state.mlDetailOpenStates[child.child_id]) {
+            state.mlDetailOpenStates[child.child_id] = {
+                baseline: false,
+                relation: false
+            };
+        }
+
+        if (currentBaselineDetails) {
+            state.mlDetailOpenStates[child.child_id].baseline = currentBaselineDetails.open;
+        }
+
+        if (currentRelationDetails) {
+            state.mlDetailOpenStates[child.child_id].relation = currentRelationDetails.open;
+        }
+
         const anomalyWarnings = anomaly?.comparisons
             ? Object.entries(anomaly.comparisons).filter(([, comparison]) => comparison.warning)
             : [];
+        
         const relationRows = state.children
             .filter((other) => other.child_id !== child.child_id)
             .map((other) => {
@@ -432,7 +454,7 @@ function renderStudents() {
                         <span>activity</span><strong>${escapeHtml(behavior.activity_level)}</strong><small>${formatConfidence(behavior.activity_confidence)}</small>
                     </div>` : '<p class="ml-empty">推論結果はまだありません</p>'}
             </div>
-            <details class="baseline-details">
+            <details class="baseline-details" ${state.mlDetailOpenStates[child.child_id]?.baseline ? 'open' : ''}>
                 <summary>ベースライン</summary>
                 ${behavior ? `
                     <div class="baseline-grid">
@@ -443,12 +465,35 @@ function renderStudents() {
                         <span>mag mean</span><span>中央値 ${formatMlNumber(behavior.baseline_mag_mean_median)} / MAD ${formatMlNumber(behavior.baseline_mag_mean_mad_scale)}</span>
                     </div>` : '<p class="ml-empty">ベースライン未算出</p>'}
             </details>
-            <details class="relation-details">
+            <details class="relation-details" ${state.mlDetailOpenStates[child.child_id]?.relation ? 'open' : ''}>
                 <summary>他児童との距離推論・関連度</summary>
                 <div class="relation-score-list">
                     ${relationRows || '<p class="ml-empty">比較対象の児童がいません</p>'}
                 </div>
             </details>`;
+
+        const baselineDetails = card.querySelector('.baseline-details');
+        const relationDetails = card.querySelector('.relation-details');
+
+        baselineDetails?.addEventListener('toggle', () => {
+            if (!state.mlDetailOpenStates[child.child_id]) {
+                state.mlDetailOpenStates[child.child_id] = {
+                    baseline: false,
+                    relation: false
+                };
+            }
+            state.mlDetailOpenStates[child.child_id].baseline = baselineDetails.open;
+        });
+
+        relationDetails?.addEventListener('toggle', () => {
+            if (!state.mlDetailOpenStates[child.child_id]) {
+                state.mlDetailOpenStates[child.child_id] = {
+                    baseline: false,
+                    relation: false
+                };
+            }
+            state.mlDetailOpenStates[child.child_id].relation = relationDetails.open;
+        });
 
         const referenceNode = grid.children[index];
         if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
