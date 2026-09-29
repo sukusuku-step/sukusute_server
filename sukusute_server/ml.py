@@ -13,12 +13,15 @@ import sukusute_server.database_models
 async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                         child_id: int,
                         distance_child_ids: list[int]) -> None:
-    # ある1人の児童の計測データ（歩数・加速度）を取得
+
+    # 10秒毎でこのタスクは呼ばれる
+    # 10分単位のデータに対する実行のための10分以下のスパンでの再実行は早期returnする
     if await dbsession.scalar(select(func.count()) \
             .select_from(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory)
             .where(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.date >= datetime.datetime.now() - datetime.timedelta(minutes=10))):
         return
 
+    # ある1人の児童の計測データ（歩数・加速度）を取得
     single_stmt = select(sukusute_server.database_models.SingleChildData) \
                     .where(
                         sukusute_server.database_models.SingleChildData.child_id == child_id,
@@ -105,6 +108,8 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     # 直近10分間の計測データとして取得
     # それぞれの相手デバイスに対してdistance_inferへの入力形式を作成
     distance_records_10min = [record for record in distance_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=11)]
+
+    # 計測を行っている全ての相手デバイスに対して計算する
     for other_child_id in distance_child_ids:
         if child_id > other_child_id:
             child_distance_records_10min = [record for record in distance_records_10min if record.child_id_1 == other_child_id][:6000]

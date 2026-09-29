@@ -19,7 +19,6 @@ from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
 from sqlalchemy import and_, or_
-import sqlalchemy.sql.functions
 from sqlalchemy import or_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 

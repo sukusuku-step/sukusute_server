@@ -50,7 +50,11 @@
             <div id="classSummary" class="class-summary" aria-label="登録済みクラス"></div>
             <div id="refreshMessage" class="refresh-message" role="status"></div>
             <div class="dashboard-layout">
-                <section class="students-panel" aria-label="児童の歩数一覧">
+                <section class="students-panel" aria-label="児童の状態・推論結果一覧">
+                    <div class="student-panel-heading">
+                        <h2>児童ごとの状態・推論結果</h2>
+                        <p>最新の behavior / activity、ベースライン、他児童との distance 推論・関連度を表示します。</p>
+                    </div>
                     <div id="studentGrid" class="student-grid"><div class="loading">児童データを読み込み中...</div></div>
                 </section>
                 <aside class="ranking-panel">
@@ -105,7 +109,7 @@
         </section>
         <section id="relationModal" class="modal-card relation-modal is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>児童の関係図</h2><p class="modal-caption">距離データがある児童同士を線で結びます。</p>
+            <h2>児童間の距離推論・関連度</h2><p class="modal-caption">最新の distance_infer の分類・信頼度と、その履歴から算出した関連度スコアを表示します。</p>
             <div id="relationGraph" class="relation-graph"></div>
         </section>
         <section id="studentManageModal" class="modal-card is-hidden">
@@ -117,6 +121,6 @@
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
-    <script src="app.js?v=20260926-1"></script>
+    <script src="app.js?v=20260929-ml1"></script>
 </body>
 </html>

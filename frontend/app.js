@@ -8,6 +8,10 @@ const state = {
     stepIncreaseRanking: [],
     nearestNames: {},
     deviceStatuses: {},
+    mlBehavior: {},
+    mlRelations: {},
+    mlUpdatedAt: 0,
+    mlChildSignature: '',
     selectedDate: new Date(),
     // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
     teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
@@ -18,6 +22,11 @@ const STEP_WARNING_THRESHOLD = 3000;
 const WARNING_DECREASE_PERCENT = 60;
 const NORMAL_INCREASE_PERCENT = 20;
 const DEVICE_STATUS_STALE_MS = 60_000;
+const ML_REFRESH_INTERVAL_MS = 30_000;
+
+// フロントをAPIサーバーと別ホストで配信する場合の接続先。
+// 同じFastAPIサーバーから配信する場合は '' にすると相対URLになります。
+const API_BASE_URL = 'http://49.212.151.94:3000';
 
 let refreshTimer = null;
 let refreshInProgress = false;
@@ -80,7 +89,10 @@ function animateStepValue(element, childId, targetValue) {
 // ===== API通信と認証状態 =====
 
 async function apiRequest(url, options = {}) {
-    console.info('[ui] API request', options.method || 'GET', url);
+    const requestUrl = /^https?:\/\//i.test(url)
+        ? url
+        : `${API_BASE_URL}${url.startsWith('/') ? url : `/${url}`}`;
+    console.info('[ui] API request', options.method || 'GET', requestUrl);
     const headers = { ...(options.headers || {}) };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     if (options.body) headers['Content-Type'] = 'application/json';
@@ -89,9 +101,9 @@ async function apiRequest(url, options = {}) {
     const timeoutId = setTimeout(() => controller.abort(), 15000);
     let response;
     try {
-        response = await fetch(url, { ...options, headers, signal: controller.signal });
+        response = await fetch(requestUrl, { ...options, headers, signal: controller.signal });
     } catch (error) {
-        if (controller.signal.aborted) throw new Error(`API応答がタイムアウトしました: ${url}`);
+        if (controller.signal.aborted) throw new Error(`API応答がタイムアウトしました: ${requestUrl}`);
         throw error;
     } finally {
         clearTimeout(timeoutId);
@@ -104,11 +116,78 @@ async function apiRequest(url, options = {}) {
         throw new Error('ログインの有効期限が切れています。もう一度ログインしてください。');
     }
     if (!response.ok) {
-        console.error('[ui] API error', response.status, url, body);
-        throw new Error(body.detail || `HTTP ${response.status}`);
+        console.error('[ui] API error', response.status, requestUrl, body);
+        const error = new Error(body.detail || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
     }
-    console.info('[ui] API response', response.status, url);
+    console.info('[ui] API response', response.status, requestUrl);
     return body;
+}
+
+// ML結果はデータが十分にたまるまで404になり得るため、404だけは「未算出」として扱う。
+async function apiRequestOptional(url) {
+    try {
+        return await apiRequest(url);
+    } catch (error) {
+        if (error.status === 404) return null;
+        throw error;
+    }
+}
+
+function relationKey(childId1, childId2) {
+    return [Number(childId1), Number(childId2)].sort((a, b) => a - b).join(':');
+}
+
+function formatMlNumber(value, digits = 3) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+    return Number(value).toFixed(digits).replace(/\.?0+$/, '');
+}
+
+function formatConfidence(value) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+    const number = Number(value);
+    return number <= 1 ? `${(number * 100).toFixed(1)}%` : `${number.toFixed(1)}%`;
+}
+
+// behavior/activity、ベースライン、児童間distance/関連度をまとめて取得する。
+// 推論自体が10分単位なので、5秒ごとの歩数更新とは分けて30秒に一度だけ取得する。
+async function loadMlResults(force = false) {
+    const childIds = state.children.map((child) => Number(child.child_id)).sort((a, b) => a - b);
+    const signature = childIds.join(',');
+    const now = Date.now();
+    if (!force
+        && signature === state.mlChildSignature
+        && now - state.mlUpdatedAt < ML_REFRESH_INTERVAL_MS) {
+        return;
+    }
+
+    const nextBehavior = {};
+    const nextRelations = {};
+
+    await Promise.all(childIds.map(async (childId) => {
+        nextBehavior[childId] = await apiRequestOptional(`/api/ml/behavior/${childId}`);
+    }));
+
+    const relationRequests = [];
+    for (let i = 0; i < childIds.length; i += 1) {
+        for (let j = i + 1; j < childIds.length; j += 1) {
+            const childId1 = childIds[i];
+            const childId2 = childIds[j];
+            relationRequests.push((async () => {
+                const result = await apiRequestOptional(
+                    `/api/ml/relation?child_id_1=${encodeURIComponent(childId1)}&child_id_2=${encodeURIComponent(childId2)}`
+                );
+                nextRelations[relationKey(childId1, childId2)] = result;
+            })());
+        }
+    }
+    await Promise.all(relationRequests);
+
+    state.mlBehavior = nextBehavior;
+    state.mlRelations = nextRelations;
+    state.mlUpdatedAt = now;
+    state.mlChildSignature = signature;
 }
 
 // 日付をAPIのクエリパラメータ形式へ変換する。
@@ -195,6 +274,15 @@ async function loadDashboard() {
                     (deviceStatuses.devices || []).map((item) => [item.child_id, item])
                 );
                 renderStudents();
+            }),
+            loadMlResults().then(() => {
+                renderStudents();
+                if (!document.getElementById('relationModal').classList.contains('is-hidden')) {
+                    renderRelationSummary();
+                }
+            }).catch((error) => {
+                // 歩数ダッシュボード全体はML API障害の影響で止めない。
+                console.warn('[ui] ML refresh failed', error);
             })
         ]);
         const failedRefresh = refreshResults.find((result) => result.status === 'rejected');
@@ -267,7 +355,8 @@ function renderStudents() {
                 <div class="student-name"></div>
                 <div class="student-steps">歩数：<strong class="step-number"></strong></div>
                 <div class="device-status"></div>
-                <div class="student-status"></div>`;
+                <div class="student-status"></div>
+                <section class="ml-summary" aria-label="推論結果"></section>`;
         }
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
         card.querySelector('.student-name').innerHTML = nameHtml;
@@ -291,6 +380,48 @@ function renderStudents() {
             </span>`;
         card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
         card.querySelector('.student-status').innerHTML = statusHtml;
+        const behavior = state.mlBehavior[child.child_id];
+        const relationRows = state.children
+            .filter((other) => other.child_id !== child.child_id)
+            .map((other) => {
+                const relation = state.mlRelations[relationKey(child.child_id, other.child_id)];
+                return `
+                    <div class="relation-score-row">
+                        <strong>${escapeHtml(other.name || `児童${other.child_id}`)}</strong>
+                        <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
+                        <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
+                        <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
+                    </div>`;
+            }).join('');
+
+        card.querySelector('.ml-summary').innerHTML = `
+            <div class="ml-section">
+                <h3>最新の推論</h3>
+                ${behavior ? `
+                    <div class="ml-result-grid">
+                        <span>加速度 behavior</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}</small>
+                        <span>歩数 behavior</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}</small>
+                        <span>activity</span><strong>${escapeHtml(behavior.activity_level)}</strong><small>${formatConfidence(behavior.activity_confidence)}</small>
+                    </div>` : '<p class="ml-empty">推論結果はまだありません</p>'}
+            </div>
+            <details class="baseline-details">
+                <summary>ベースライン</summary>
+                ${behavior ? `
+                    <div class="baseline-grid">
+                        <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / MAD ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
+                        <span>活動量 proxy</span><span>中央値 ${formatMlNumber(behavior.baseline_activity_mean_proxy_median)} / MAD ${formatMlNumber(behavior.baseline_activity_mean_proxy_mad_scale)}</span>
+                        <span>加速度 std</span><span>中央値 ${formatMlNumber(behavior.baseline_acc_std_median)} / MAD ${formatMlNumber(behavior.baseline_acc_std_mad_scale)}</span>
+                        <span>gyro mean</span><span>中央値 ${formatMlNumber(behavior.baseline_gyro_mean_median)} / MAD ${formatMlNumber(behavior.baseline_gyro_mean_mad_scale)}</span>
+                        <span>mag mean</span><span>中央値 ${formatMlNumber(behavior.baseline_mag_mean_median)} / MAD ${formatMlNumber(behavior.baseline_mag_mean_mad_scale)}</span>
+                    </div>` : '<p class="ml-empty">ベースライン未算出</p>'}
+            </details>
+            <details class="relation-details">
+                <summary>他児童との距離推論・関連度</summary>
+                <div class="relation-score-list">
+                    ${relationRows || '<p class="ml-empty">比較対象の児童がいません</p>'}
+                </div>
+            </details>`;
+
         const referenceNode = grid.children[index];
         if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
         animateStepValue(card.querySelector('.step-number'), child.child_id, steps);
@@ -362,13 +493,38 @@ async function refreshClassList() {
         </select></label>`).join('');
 }
 
-// 現在の児童を関係図モーダルへノードとして描画する。
-async function openRelationModal() {
+// 現在の児童間について、distance_infer結果と関連度を一覧表示する。
+function renderRelationSummary() {
     const graph = document.getElementById('relationGraph');
-    graph.innerHTML = state.children.length
-        ? state.children.map((child) => `<span class="relation-node">${escapeHtml(child.name)}</span>`).join('<span aria-hidden="true">↔</span>')
-        : '<span>児童データがありません</span>';
+    const rows = [];
+    for (let i = 0; i < state.children.length; i += 1) {
+        for (let j = i + 1; j < state.children.length; j += 1) {
+            const child1 = state.children[i];
+            const child2 = state.children[j];
+            const relation = state.mlRelations[relationKey(child1.child_id, child2.child_id)];
+            rows.push(`
+                <div class="relation-pair">
+                    <strong>${escapeHtml(child1.name)} ↔ ${escapeHtml(child2.name)}</strong>
+                    <span>distance: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
+                    <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
+                    <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
+                </div>`);
+        }
+    }
+    graph.innerHTML = rows.length ? rows.join('') : '<span>比較できる児童データがありません</span>';
+}
+
+async function openRelationModal() {
     openModal('relationModal');
+    document.getElementById('relationGraph').innerHTML = '<span>推論結果を読み込み中...</span>';
+    try {
+        await loadMlResults(true);
+        renderStudents();
+        renderRelationSummary();
+    } catch (error) {
+        document.getElementById('relationGraph').innerHTML =
+            `<span>推論結果を取得できませんでした: ${escapeHtml(error.message)}</span>`;
+    }
 }
 
 // 生徒管理情報を取得してから、生徒管理モーダルを開く。
