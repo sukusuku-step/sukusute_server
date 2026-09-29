@@ -32,7 +32,7 @@ const ANOMALY_FEATURE_LABELS = {
 };
 
 // フロントをAPIサーバーと別ホストで配信する場合の接続先。
-// 同じFastAPIサーバーから配信する場合は '' にすると相対URLになります。
+// 同じFastAPIサーバーから配信する場合は '' にすると相対URLになる。
 const API_BASE_URL = 'http://49.212.151.94:3000';
 
 let refreshTimer = null;
@@ -375,10 +375,10 @@ function renderStudents() {
         const isDeviceStatusFresh = statusAge >= 0 && statusAge < DEVICE_STATUS_STALE_MS;
         const currentDeviceStatus = isDeviceStatusFresh ? deviceStatus : null;
         const wifiSignalLevel = currentDeviceStatus ? getWifiSignalLevel(currentDeviceStatus.wifi_rssi) : 0;
-        const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : 'N/A';
+        const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : '接続なし';
         const wifiDescription = currentDeviceStatus
             ? `Wi-Fi電波強度 ${wifiSignalLevel}/4、${wifiRssiLabel}`
-            : 'Wi-Fi電波強度 N/A';
+            : 'Wi-Fi電波強度 接続なし';
         const wifiBars = [1, 2, 3, 4].map((barNumber) =>
             `<span class="wifi-signal-bar${barNumber <= wifiSignalLevel ? ' is-active' : ''}"></span>`
         ).join('');
@@ -417,7 +417,7 @@ function renderStudents() {
             nearestPerson?.remove();
         }
         card.querySelector('.device-status').innerHTML = `
-            <span>BAT : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'N/A'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
+            <span>BAT : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'データなし'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
             <span class="wifi-status" role="img" aria-label="${wifiDescription}" title="${wifiDescription}">
                 <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
                 <span>Wi-Fi ${wifiRssiLabel}</span>
