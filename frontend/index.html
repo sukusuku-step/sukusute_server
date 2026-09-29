@@ -72,10 +72,11 @@
     <!-- メニューから開く操作パネル -->
     <aside id="menuPanel" class="menu-panel" aria-hidden="true">
         <button id="closeMenuButton" class="close-menu" type="button" aria-label="メニューを閉じる">×</button>
-        <button data-action="relation">関係図を表示</button>
-        <button data-action="class">クラスを変更</button>
-        <button data-action="student-manage">生徒管理</button>
-        <button data-action="refresh">情報を更新 ↻</button>
+        <button data-action="related-network">関係ネットワーク図を見る</button>
+        <button data-action="relation">相関関係を一覧で見る</button>
+        <button data-action="class">所属クラスの管理</button>
+        <button data-action="student-manage">児童データの管理</button>
+        <button data-action="refresh">ステータスの更新 ↻</button>
         <button data-action="account-delete">アカウントを削除 ⌫</button>
         <button data-action="logout">ログアウト ⇥</button>
     </aside>
@@ -103,13 +104,13 @@
         </section>
         <section id="relationModal" class="modal-card relation-modal is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>児童間の距離推論・関連度</h2><p class="modal-caption">最新の distance_infer の分類・信頼度と、その履歴から算出した関連度スコアを表示します。</p>
+            <h2>各児童間の相関関係</h2><p class="modal-caption">児童間の最新の距離状態のステータスと、その履歴から算出した関連度スコアを一覧で表示します。</p>
             <div id="relationGraph" class="relation-graph"></div>
         </section>
         <section id="studentManageModal" class="modal-card is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
             <h2>生徒管理</h2>
-            <p class="modal-caption">クラスの割り振りと、先生につけている端末にはチェックを入れてください。</p>
+            <p class="modal-caption">クラスの割り振りと、先生に取り付けているデバイスにはチェックを入れてください。</p>
             <div id="studentManageMessage" class="form-message"></div>
             <div id="studentManageList" class="student-manage-list"></div>
         </section>

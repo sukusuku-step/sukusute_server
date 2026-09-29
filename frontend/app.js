@@ -273,7 +273,7 @@ async function loadClasses() {
         ? state.classes.map((item) => `<span>${escapeHtml(item.name)}（${item.child_count}人）</span>`).join('')
         : '<span>クラスが登録されていません</span>';
     const selector = document.getElementById('classSelector');
-    selector.innerHTML = '<option value="">全員のようす</option>' + state.classes
+    selector.innerHTML = '<option value="">全員の様子</option>' + state.classes
         .map((item) => `<option value="${item.class_id}">${escapeHtml(item.name)}　のようす</option>`).join('');
     selector.value = state.selectedClassId || '';
     await loadDashboard();
@@ -598,7 +598,7 @@ async function refreshClassList() {
         </select></label>`).join('');
 }
 
-// 現在の児童間について、distance_infer結果と関連度を一覧表示する。
+// 現在の児童間について、distance_inferの推論結果と関連度スコアを一覧表示する。
 function renderRelationSummary() {
     const graph = document.getElementById('relationGraph');
     const rows = [];
@@ -610,7 +610,7 @@ function renderRelationSummary() {
             rows.push(`
                 <div class="relation-pair">
                     <strong>${escapeHtml(child1.name)} ↔ ${escapeHtml(child2.name)}</strong>
-                    <span>distance: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
+                    <span>距離状態: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                     <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                     <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
                 </div>`);
@@ -621,14 +621,14 @@ function renderRelationSummary() {
 
 async function openRelationModal() {
     openModal('relationModal');
-    document.getElementById('relationGraph').innerHTML = '<span>推論結果を読み込み中...</span>';
+    document.getElementById('relationGraph').innerHTML = '<span>結果を読み込み中...</span>';
     try {
         await loadMlResults(true);
         renderStudents();
         renderRelationSummary();
     } catch (error) {
         document.getElementById('relationGraph').innerHTML =
-            `<span>推論結果を取得できませんでした: ${escapeHtml(error.message)}</span>`;
+            `<span>結果を取得できませんでした: ${escapeHtml(error.message)}</span>`;
     }
 }
 
