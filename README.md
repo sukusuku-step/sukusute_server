@@ -104,6 +104,8 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `GET` | `/api/stats/today` | 日次歩数集計 | 全児童の歩数、ランキング、警告などを指定日単位で返す |
 | `GET` | `/api/stats/distance-today` | 日次距離集計 | 全距離、児童別統計、距離の大きい上位5ペアを返す |
 | `GET` | `/api/stats/monthly` | 月間集計 | 指定月の歩数合計、距離合計、残日数などを返す |
+| `GET` | `/api/ml/behavior/{child_id}` | 単独児童の推論結果 | 児童の最新な推論結果を返却する |
+| `GET` | `/api/ml/relation?child_id_1={child_id_1}&child_id_2={child_id_2}` | 児童の関係についての推論結果 | 児童の関係に関する最新の推論結果を返却する |
 
 以下では、各APIのリクエストとレスポンス、具体的な動作を説明します。
 
@@ -298,6 +300,64 @@ timestamp,steps,ax,ay,az,gx,gy,gz,mx,my,mz,start,Distance_{child_id},Distance_{c
 
 指定月の全歩数レコードの合計、全距離レコードの合計、月末日、残日数を返します。対象月が現在月でない場合、`remaining_days` は0です。
 
+### ML推論結果API
+
+`POST /api/push_csv/{child_id}` 受信後、バックグラウンドで `ml.evaluate_data` が実行され、以下の推論結果が保存されます。結果が未生成の場合は `404 Not Found` が返ります。
+
+#### `GET /api/ml/behavior/{child_id}`
+
+指定児童の最新の単独行動推論結果を返します。
+
+```json
+{
+  "status": "ok",
+  "date": "2026-07-15T10:00:00",
+  "behavior_acce": "SITTING",
+  "behavior_acce_confidence": 0.92,
+  "behavior_pedo": "NORMAL",
+  "behavior_pedo_confidence": 0.85,
+  "activity_level": 3,
+  "activity_confidence": 0.78,
+  "baseline_steps_10min_median": 120.0,
+  "baseline_steps_10min_mad_scale": 15.0,
+  "baseline_activity_mean_proxy_median": 0.5,
+  "baseline_activity_mean_proxy_mad_scale": 0.1,
+  "baseline_acc_std_median": 0.05,
+  "baseline_acc_std_mad_scale": 0.01,
+  "baseline_gyro_mean_median": 0.02,
+  "baseline_gyro_mean_mad_scale": 0.005,
+  "baseline_mag_mean_median": 0.3,
+  "baseline_mag_mean_mad_scale": 0.05
+}
+```
+
+- `behavior_acce`: 加速度に基づく行動。`SITTING`（座り状態）または `STANDING`（立ち状態）。
+- `behavior_pedo`: 歩数に基づく行動。`STOP`（静止）、`SLOW`（歩行（ゆっくり））、`NORMAL`（歩行（通常速度））。
+- `activity_level`: 活動レベル（整数）。
+- `baseline_*`: 過去データから算出した各指標の中央値と散らばり（MAD scale）。初回推論時など `null` になる場合があります。
+
+#### `GET /api/ml/relation?child_id_1={child_id_1}&child_id_2={child_id_2}`
+
+指定した2名の児童の最新の関係推論結果を返します。`child_id_1` と `child_id_2` の大小は自動的に正規化されるため、どちらから指定しても同じ結果が得られます。
+
+```json
+{
+  "status": "ok",
+  "date": "2026-07-15T10:00:00",
+  "evaluated": "SAME_ROOM",
+  "confidence": 0.88,
+  "score": 0.75
+}
+```
+
+- `evaluated`: 関係の評価結果。
+  - `NA`：測定値なし/タイムアウト
+  - `ALONE`：一人
+  - `SAME_BEHAVIOR`：接近（同じ行動）
+  - `SAME_ROOM`：接近（同じ部屋）
+- `confidence`: 推論の確信度。
+- `score`: 推論に用いたスコア値。
+
 ## curlでの確認例
 
 ```sh
@@ -315,6 +375,10 @@ curl -X POST http://localhost:8000/api/push_csv/1 \
 
 # 指定日の歩数を取得
 curl "http://localhost:8000/api/children/1/steps?year=2026&month=7&day=15"
+
+# ML推論結果を取得
+curl "http://localhost:8000/api/ml/behavior/1"
+curl "http://localhost:8000/api/ml/relation?child_id_1=1&child_id_2=2"
 ```
 
 ## ダミーデータ送信
@@ -354,8 +418,10 @@ sukusute_server/
 │   ├── __init__.py        # FastAPIアプリとAPIルート
 │   ├── __main__.py        # Uvicorn起動
 │   ├── database_models.py # SQLAlchemyモデルとDB接続
+│   ├── ml.py              # 推論関係
 │   └── http_models.py     # リクエスト・レスポンスモデル
 ├── frontend/              # ダッシュボード画面
+├── models/                # 推論用モデル
 ├── migration/             # Alembicマイグレーション
 ├── dummy_data_sender.py   # 20デバイスシミュレータ
 └── delete_children.py     # デバッグ用データ削除

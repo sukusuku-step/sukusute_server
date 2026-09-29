@@ -6,6 +6,8 @@ import uuid
 
 import pydantic
 
+from sukusute_server import database_models
+
 
 # ===== 共通レスポンスと認証・クラス管理 =====
 
@@ -280,3 +282,30 @@ class MonthlyStatsResponse(Result):
     total_distance: float
     remaining_days: int
     last_day: int
+
+class MLSingleResult(Result):
+    """ 単独児童の推論結果レスポンス"""
+    date: datetime.datetime
+    behavior_acce: database_models.ChildBehaviorAcceEnum
+    behavior_acce_confidence: float
+    behavior_pedo: database_models.ChildBehaviorPedoEnum
+    behavior_pedo_confidence: float
+    activity_level: int
+    activity_confidence: float
+
+    baseline_steps_10min_median: typing.Optional[float]
+    baseline_steps_10min_mad_scale: typing.Optional[float]
+    baseline_activity_mean_proxy_median: typing.Optional[float]
+    baseline_activity_mean_proxy_mad_scale: typing.Optional[float]
+    baseline_acc_std_median: typing.Optional[float]
+    baseline_acc_std_mad_scale: typing.Optional[float]
+    baseline_gyro_mean_median: typing.Optional[float]
+    baseline_gyro_mean_mad_scale: typing.Optional[float]
+    baseline_mag_mean_median: typing.Optional[float]
+    baseline_mag_mean_mad_scale: typing.Optional[float]
+
+class MLRelationResult(Result):
+    date: datetime.datetime
+    evaluated: database_models.ChildDistanceEvaluationEnum
+    confidence: float
+    score: float

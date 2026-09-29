@@ -18,6 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
+from sqlalchemy import and_, or_
 import sqlalchemy.sql.functions
 from sqlalchemy import or_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -334,7 +335,7 @@ async def push_csv(
     child_data_rows = []
     distance_data_rows = []
     for row in parsed_csv:
-        timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, start, *distances = row
+        timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, _, *distances = row
         calculated_time = start_time + datetime.timedelta(seconds=float(timestamp))
         child_data_rows.append({
             "child_id": child_id,
@@ -367,7 +368,7 @@ async def push_csv(
         await dbsession.execute(distance_insert, distance_data_rows)
     await dbsession.commit()
 
-    # 機械学習のタスクを作成する
+    # 機械学習のバックグラウンドタスクを作成する（api/push_csvのAPIがM5側で叩かれる度に作成される）
     background_tasks.add_task(ml.evaluate_data, dbsession, child_id, parsed_distance_children)
 
     return http_models.Result(status="ok")
@@ -1158,6 +1159,68 @@ async def get_monthly_stats(
         last_day=last_day
     )
 
+# ===== ML推論結果API =====
+@app.get("/api/ml/behavior/{child_id}", tags=["API"])
+async def get_ml_behavior_result(
+        dbsession: database_models.SessionDep,
+        child_id: int) -> http_models.MLSingleResult:
+    """ 単独児童に関する最新の推論結果を返却する。 """
+    record = (await dbsession.scalar(
+            sqlalchemy.select(database_models.ChildBehaviorDataEvaluationHistory)
+            .where(
+                database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id
+            )
+            .order_by(sqlalchemy.desc(database_models.ChildBehaviorDataEvaluationHistory.date))
+            .limit(1)
+    ))
+    if not record:
+        raise fastapi.exceptions.HTTPException(404, "Record not found.")
+    return http_models.MLSingleResult(
+            status="ok",
+            date=record.date,
+            behavior_acce=record.behavior_acce,
+            behavior_acce_confidence=record.behavior_acce_confidence,
+            behavior_pedo=record.behavior_pedo,
+            behavior_pedo_confidence=record.behavior_pedo_confidence,
+            activity_level=record.activity,
+            activity_confidence=record.activity_confidence,
+            baseline_steps_10min_median=record.baseline_steps_10min_median,
+            baseline_steps_10min_mad_scale=record.baseline_steps_10min_mad_scale,
+            baseline_activity_mean_proxy_median=record.baseline_activity_mean_proxy_median,
+            baseline_activity_mean_proxy_mad_scale=record.baseline_activity_mean_proxy_mad_scale,
+            baseline_acc_std_median=record.baseline_acc_std_median,
+            baseline_acc_std_mad_scale=record.baseline_acc_std_mad_scale,
+            baseline_gyro_mean_median=record.baseline_gyro_mean_median,
+            baseline_gyro_mean_mad_scale=record.baseline_gyro_mean_mad_scale,
+            baseline_mag_mean_median=record.baseline_mag_mean_median,
+            baseline_mag_mean_mad_scale=record.baseline_mag_mean_mad_scale
+    )
+
+@app.get("/api/ml/relation", tags=["API"])
+async def get_ml_relation_result(
+        dbsession: database_models.SessionDep,
+        child_id_1: int,
+        child_id_2: int):
+    """ 児童の関係に関する最新の推論結果を返却する。 """
+    record = (await dbsession.scalar(
+        sqlalchemy.select(database_models.ChildDistanceEvaluationHistory)
+        .where(and_(
+            database_models.ChildDistanceEvaluationHistory.child_id_1 == max(child_id_1, child_id_2),
+            database_models.ChildDistanceEvaluationHistory.child_id_2 == min(child_id_1, child_id_2)
+        ))
+        .order_by(sqlalchemy.desc(database_models.ChildDistanceEvaluationHistory.date))
+        .limit(1)
+    ))
+    if not record:
+        raise fastapi.exceptions.HTTPException(404, "Record not found.")
+
+    return http_models.MLRelationResult(
+        status="ok",
+        date=record.date,
+        evaluated=record.evaluated,
+        confidence=record.confidence,
+        score=record.score
+    )
 
 # APIルートを先に登録した後でフロントエンドを配信する。
 app.mount(

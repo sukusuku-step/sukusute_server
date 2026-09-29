@@ -10,4 +10,8 @@ wheels/
 .venv
 /venv
 
+# sqlite
 data.sqlite
+
+# model
+models/
