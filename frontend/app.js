@@ -20,13 +20,11 @@ const state = {
 };
 
 // 画面表示に使う歩数ルール。カードと警告で同じ基準を使う。
-const STEP_WARNING_THRESHOLD = 3000;
-const WARNING_DECREASE_PERCENT = 60;
-const NORMAL_INCREASE_PERCENT = 20;
 const DEVICE_STATUS_STALE_MS = 60_000;
 const ML_REFRESH_INTERVAL_MS = 30_000;
+
 const ANOMALY_FEATURE_LABELS = {
-    steps_10min: '10分間歩数',
+    steps_10min: '10分間の歩数',
     activity_mean_proxy: '活動量',
     acc_std: '加速度のばらつき',
     gyro_mean: '角速度',
@@ -157,6 +155,35 @@ function formatConfidence(value) {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     const number = Number(value);
     return number <= 1 ? `${(number * 100).toFixed(1)}%` : `${number.toFixed(1)}%`;
+}
+
+function formatAnomalyChange(feature, comparison) {
+    const label = ANOMALY_FEATURE_LABELS[feature] || feature;
+    const current = Number(comparison.current);
+    const baseline = Number(comparison.baseline_median);
+    const percent = formatMlNumber(comparison.relative_diff_percent, 1);
+
+    if (Math.abs(baseline) < 1e-6) {
+        if (current > baseline) {
+            return `${label}が普段より増えています`;
+        }
+
+        if (current < baseline) {
+            return `${label}が普段より減っています`;
+        }
+
+        return `${label}が普段と異なる値になっています`;
+    }
+
+    if (current > baseline) {
+        return `${label}が普段より${percent}%増えました`;
+    }
+
+    if (current < baseline) {
+        return `${label}が普段より${percent}%減りました`;
+    }
+
+    return `${label}が普段と異なる値になっています`;
 }
 
 // behavior/activity、ベースライン、児童間distance/関連度をまとめて取得する。
@@ -355,13 +382,14 @@ function renderStudents() {
         const wifiBars = [1, 2, 3, 4].map((barNumber) =>
             `<span class="wifi-signal-bar${barNumber <= wifiSignalLevel ? ' is-active' : ''}"></span>`
         ).join('');
+
         const steps = state.steps[child.child_id] || 0;
-        const warning = steps > 0 && steps < STEP_WARNING_THRESHOLD;
         const isTeacher = isTeacherFlag(child.child_id);
-        const nameHtml = `${escapeHtml(child.name || `児童${child.child_id}`)}${isTeacher ? '<span class="teacher-badge" title="先生の端末">🧑\u200d🏫 先生</span>' : ''}`;
-        const statusHtml = warning
-            ? `活動量が<strong>${WARNING_DECREASE_PERCENT}%</strong>低下`
-            : `通常の活動量より${NORMAL_INCREASE_PERCENT}%増加`;
+        const nameHtml = `${escapeHtml(child.name || `児童${child.child_id}`)}
+                            ${isTeacher ? 
+                                '<span class="teacher-badge" title="先生の端末">🧑\u200d🏫 先生</span>' : ''
+                            }`;
+        
         let card = grid.querySelector(`[data-student-card="${child.child_id}"]`);
         if (!card) {
             card = document.createElement('article');
@@ -394,8 +422,8 @@ function renderStudents() {
                 <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
                 <span>Wi-Fi ${wifiRssiLabel}</span>
             </span>`;
-        card.querySelector('.student-status').className = `student-status ${warning ? 'warning' : 'normal'}`;
-        card.querySelector('.student-status').innerHTML = statusHtml;
+        card.querySelector('.student-status').className = 'student-status';
+        card.querySelector('.student-status').innerHTML = '';
 
         const behavior = state.mlBehavior[child.child_id];
         const anomaly = state.mlAnomalies[child.child_id];
@@ -429,7 +457,7 @@ function renderStudents() {
                 return `
                     <div class="relation-score-row">
                         <strong>${escapeHtml(other.name || `児童${other.child_id}`)}</strong>
-                        <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
+                        <span>距離状態: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                         <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                         <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
                     </div>`;
@@ -439,34 +467,34 @@ function renderStudents() {
             ${anomaly?.warning ? `
                 <article class="warning-item" role="alert">
                     <strong>⚠ 普段と異なる状態を検出</strong>
-                    <span>直近10分の特徴量が個人ベースラインから10%以上離れています。</span>
+                    <span>直近10分の特徴量が普段の値から10%以上離れています。</span>
                     <small>${anomalyWarnings.map(([feature, comparison]) =>
-                        `${escapeHtml(ANOMALY_FEATURE_LABELS[feature] || feature)} ${formatMlNumber(comparison.relative_diff_percent, 1)}%`
-                    ).join(' / ')}</small>
+                        escapeHtml(formatAnomalyChange(feature, comparison))
+                    ).join('<br>')}</small>
                 </article>
             ` : ''}
             <div class="ml-section">
                 <h3>最新の推論</h3>
                 ${behavior ? `
                     <div class="ml-result-grid">
-                        <span>加速度 behavior</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}</small>
-                        <span>歩数 behavior</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}</small>
-                        <span>activity</span><strong>${escapeHtml(behavior.activity_level)}</strong><small>${formatConfidence(behavior.activity_confidence)}</small>
+                        <span>姿勢状態</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}</small>
+                        <span>走行状態</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}</small>
+                        <span>活動量</span><strong>${escapeHtml(behavior.activity_level)}</strong><small>${formatConfidence(behavior.activity_confidence)}</small>
                     </div>` : '<p class="ml-empty">推論結果はまだありません</p>'}
             </div>
             <details class="baseline-details" ${state.mlDetailOpenStates[child.child_id]?.baseline ? 'open' : ''}>
-                <summary>ベースライン</summary>
+                <summary>普段の値</summary>
                 ${behavior ? `
                     <div class="baseline-grid">
                         <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / MAD ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
-                        <span>活動量 proxy</span><span>中央値 ${formatMlNumber(behavior.baseline_activity_mean_proxy_median)} / MAD ${formatMlNumber(behavior.baseline_activity_mean_proxy_mad_scale)}</span>
-                        <span>加速度 std</span><span>中央値 ${formatMlNumber(behavior.baseline_acc_std_median)} / MAD ${formatMlNumber(behavior.baseline_acc_std_mad_scale)}</span>
-                        <span>gyro mean</span><span>中央値 ${formatMlNumber(behavior.baseline_gyro_mean_median)} / MAD ${formatMlNumber(behavior.baseline_gyro_mean_mad_scale)}</span>
-                        <span>mag mean</span><span>中央値 ${formatMlNumber(behavior.baseline_mag_mean_median)} / MAD ${formatMlNumber(behavior.baseline_mag_mean_mad_scale)}</span>
+                        <span>活動量</span><span>中央値 ${formatMlNumber(behavior.baseline_activity_mean_proxy_median)} / MAD ${formatMlNumber(behavior.baseline_activity_mean_proxy_mad_scale)}</span>
+                        <span>加速度</span><span>中央値 ${formatMlNumber(behavior.baseline_acc_std_median)} / MAD ${formatMlNumber(behavior.baseline_acc_std_mad_scale)}</span>
+                        <span>ジャイロ</span><span>中央値 ${formatMlNumber(behavior.baseline_gyro_mean_median)} / MAD ${formatMlNumber(behavior.baseline_gyro_mean_mad_scale)}</span>
+                        <span>地磁気</span><span>中央値 ${formatMlNumber(behavior.baseline_mag_mean_median)} / MAD ${formatMlNumber(behavior.baseline_mag_mean_mad_scale)}</span>
                     </div>` : '<p class="ml-empty">ベースライン未算出</p>'}
             </details>
             <details class="relation-details" ${state.mlDetailOpenStates[child.child_id]?.relation ? 'open' : ''}>
-                <summary>他児童との距離推論・関連度</summary>
+                <summary>他児童との距離状態・関連度スコア</summary>
                 <div class="relation-score-list">
                     ${relationRows || '<p class="ml-empty">比較対象の児童がいません</p>'}
                 </div>
