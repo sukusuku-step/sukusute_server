@@ -10,8 +10,9 @@ import sukusute_machine_learning.utils.relatedness
 
 import sukusute_server.database_models
 
-ANOMALY_THRESHOLD_RATIO = 0.10
+ANOMALY_THRESHOLD_RATIO = 0.50 # 異常検知のしきい値（何%内まで正常とみなすか）
 ANOMALY_EPS = 1e-6
+
 latest_anomaly_results: dict[int, dict] = {}
 
 def calculate_current_10min_features(records) -> dict[str, float]:
@@ -41,9 +42,8 @@ def calculate_current_10min_features(records) -> dict[str, float]:
         "mag_mean": float(np.nanmean(mag_mag))
     }
 
-def compare_current_with_baseline(current_features: dict[str, float],
-                                  baseline_result: dict | None,
-                                  threshold_ratio: float = ANOMALY_THRESHOLD_RATIO) -> dict | None:
+# 異常検知システムのために、10分間での計測データがベースラインとどれだけ外れているのかを計算する
+def compare_current_with_baseline(current_features: dict[str, float], baseline_result: dict | None, threshold_ratio: float = ANOMALY_THRESHOLD_RATIO) -> dict | None:
     if not baseline_result:
         return None
 
@@ -67,7 +67,7 @@ def compare_current_with_baseline(current_features: dict[str, float],
 
         relative_diff = abs(current_value - baseline_median) / reference_value
         feature_warning = relative_diff >= threshold_ratio
-        warning = warning or feature_warning
+        warning = warning or feature_warning # しきい値のパーセントよりも乖離していたらwarningをtrueにする
 
         comparisons[feature] = {
             "current": float(current_value),

@@ -471,7 +471,10 @@ function renderStudents() {
             ${anomaly?.warning ? `
                 <article class="warning-item" role="alert">
                     <strong>⚠ 普段と異なる状態を検出しました</strong>
-                    <span>直近10分の特徴量がベースラインから10%以上離れています。</span>
+                    <span>
+                        直近10分の特徴量がベースラインから
+                        ${formatMlNumber(anomaly.threshold_percent, 1)}%以上外れています。    
+                    </span>
                     <small>${anomalyWarnings.map(([feature, comparison]) =>
                         escapeHtml(formatAnomalyChange(feature, comparison))
                     ).join('<br>')}</small>
