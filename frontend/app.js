@@ -31,9 +31,8 @@ const ANOMALY_FEATURE_LABELS = {
     mag_mean: '地磁気'
 };
 
-// フロントをAPIサーバーと別ホストで配信する場合の接続先。
-// 同じFastAPIサーバーから配信する場合は '' にすると相対URLになる。
-const API_BASE_URL = 'http://49.212.151.94:3000';
+// APIは画面と同じFastAPIサーバーへ送る。
+const API_BASE_URL = '';
 
 let refreshTimer = null;
 let refreshInProgress = false;

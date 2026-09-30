@@ -17,6 +17,23 @@ uv run python -m sukusute_server
 
 デフォルトでは全ネットワークインターフェースの8000番ポート（`0.0.0.0:8000`）で待ち受けます。ローカルでは `http://localhost:8000` を開いてください。VPSでは下記の手順で3000番ポートを使用します。APIドキュメントはそれぞれのURLに `/docs` を付けて確認できます。`frontend/` の画面も同じアプリから配信されます。
 
+### 名札デバイスのシミュレーション
+
+サーバー起動中に別のターミナルから実行すると、ローマ字のランダムな名前の名札を30台分作成し、実機と同じCSV・端末状態形式で10秒ごとに `http://localhost:8000` へ送信します。M5実機と同じく、児童名検索は `/api/children/search`、端末状態は `/api/device_status`、センサーCSVは `/api/push_csv/{child_id}` を使います。CSVには100ms間隔の歩数・9軸センサー値・周囲の名札との距離を含みます。
+
+```sh
+uv run python db_utils/simulate_nametags.py
+```
+
+送信を1回だけ行う場合や、台数・周期を変える場合:
+
+```sh
+uv run python db_utils/simulate_nametags.py --cycles 1
+uv run python db_utils/simulate_nametags.py --count 30 --interval 10
+```
+
+作成した児童と送信データはDBに残ります。再実行時は `SIM-番号-` の児童を再利用します。停止は `Ctrl+C` です。
+
 ### VPSでの起動
 
 VPS上で次を実行します。
