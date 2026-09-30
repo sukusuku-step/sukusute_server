@@ -696,6 +696,26 @@ body {
     cursor: pointer;
 }
 
+.class-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.class-actions .danger-button {
+    padding: 3px 10px;
+    border-color: #8d2525;
+    background: #8d2525;
+    color: #fff;
+}
+
+.class-empty {
+    margin: 0;
+    padding: 8px;
+    color: #6b5556;
+    font-size: 12px;
+}
+
 .modal-caption {
     margin-top: -10px;
     font-size: 12px;
@@ -854,6 +874,163 @@ body {
     border-color: #b9a2a3;
     background: #c8babb;
     cursor: not-allowed;
+}
+
+.signage-exit-button {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, .5);
+    border-radius: 4px;
+    background: rgba(20, 20, 20, .72);
+    color: #fff;
+    cursor: pointer;
+    font-size: 26px;
+    line-height: 1;
+}
+
+body.signage-mode {
+    overflow: hidden;
+}
+
+body.signage-mode #appView {
+    height: 100vh;
+    min-height: 100vh;
+}
+
+body.signage-mode .dashboard {
+    width: 100%;
+    max-width: none;
+    height: calc(100vh - 42px);
+    display: flex;
+    flex-direction: column;
+    padding: 0 12px 8px;
+}
+
+body.signage-mode .toolbar {
+    flex: 0 0 42px;
+}
+
+body.signage-mode .class-summary {
+    flex: 0 0 auto;
+    min-height: 22px;
+    margin: 0 0 4px;
+}
+
+body.signage-mode .refresh-message {
+    flex: 0 0 18px;
+    margin: 0 0 4px;
+}
+
+body.signage-mode .dashboard-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) 225px;
+    align-items: stretch;
+}
+
+body.signage-mode .students-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+body.signage-mode .students-panel {
+    padding-top: 8px;
+}
+
+body.signage-mode .student-grid {
+    flex: 1 1 auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-auto-rows: 150px;
+    gap: 10px;
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+body.signage-mode .student-card {
+    width: auto;
+    height: 150px;
+    min-width: 0;
+    min-height: 0;
+    align-self: stretch;
+    justify-self: stretch;
+    align-items: center;
+    justify-content: center;
+    container-type: size;
+    gap: 4px;
+    padding: 6px;
+    border-width: 4px;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+body.signage-mode .student-card:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+body.signage-mode .student-name {
+    display: -webkit-box;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+body.signage-mode .student-steps {
+    font-size: 12px;
+}
+
+body.signage-mode .student-steps strong {
+    font-size: 14px;
+}
+
+body.signage-mode .nearest-person {
+    display: -webkit-box;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+body.signage-mode .ranking-panel {
+    align-self: start;
+    max-height: 100%;
+    overflow: auto;
+}
+
+@container (max-height: 100px) {
+    .student-name {
+        font-size: 11px;
+        line-clamp: 1;
+        -webkit-line-clamp: 1;
+    }
+
+    .student-steps,
+    .student-steps strong {
+        font-size: 11px;
+    }
+
+    .nearest-person {
+        font-size: 9px;
+        line-height: 1.1;
+        line-clamp: 1;
+        -webkit-line-clamp: 1;
+    }
 }
 
 @media (max-width: 650px) {
@@ -1240,4 +1417,20 @@ body {
 
 .legend-edge.high {
     border-top: 14px solid #b71c1c;
+}
+
+@media (max-width: 650px) {
+    body.signage-mode .dashboard-layout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: 8px;
+    }
+
+    body.signage-mode .ranking-panel {
+        max-height: 125px;
+    }
+
+    body.signage-mode .student-grid {
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
+    }
 }

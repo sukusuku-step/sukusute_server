@@ -259,6 +259,36 @@ async def rename_class(
     return http_models.ClassResponse(status="ok", class_id=class_id, name=name)
 
 
+@app.delete("/api/classes/{class_id:int}", tags=["Classes"])
+async def delete_class(
+    class_id: int,
+    dbsession: database_models.SessionDep,
+    teacher: TeacherDep,
+) -> http_models.Result:
+    """クラスを削除し、所属していた子どもは未所属に戻す。"""
+    school_class = await dbsession.get(database_models.SchoolClass, class_id)
+    if not school_class:
+        raise fastapi.HTTPException(404, "クラスが見つかりません")
+
+    class_name = school_class.name
+    unassigned_count = await dbsession.scalar(
+        sqlalchemy.select(sqlalchemy.func.count())
+        .select_from(database_models.Child)
+        .where(database_models.Child.class_id == class_id)
+    ) or 0
+    await dbsession.execute(
+        sqlalchemy.update(database_models.Child)
+        .where(database_models.Child.class_id == class_id)
+        .values(class_id=None)
+    )
+    await dbsession.delete(school_class)
+    await dbsession.commit()
+    return http_models.Result(
+        status="ok",
+        msg=f"クラス「{class_name}」を削除し、{unassigned_count}人を未所属にしました",
+    )
+
+
 @app.patch("/api/children/{child_id:int}/class", tags=["Classes"])
 async def change_child_class(
     child_id: int,

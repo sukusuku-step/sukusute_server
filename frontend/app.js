@@ -38,6 +38,10 @@ let refreshTimer = null;
 let refreshInProgress = false;
 // 児童ごとのスロット風アニメーションの進行状況（連続更新時に前回分を打ち切るために使う）。
 const stepAnimationState = new Map();
+let signageScrollInterval = 0;
+let signageScrollRetryTimer = 0;
+let signageScrollDirection = 1;
+let signageScrollPauseUntil = 0;
 
 // 端末が先生用としてチェックされているかどうかを判定する。
 function isTeacherFlag(childId) {
@@ -383,6 +387,7 @@ function renderStudents() {
     const grid = document.getElementById('studentGrid');
     if (!state.children.length) {
         grid.innerHTML = '<div class="loading">このクラスに子どものデータがありません</div>';
+        ensureSignageAutoScroll();
         return;
     }
     grid.querySelector('.loading')?.remove();
@@ -553,6 +558,81 @@ function renderStudents() {
         if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
         animateStepValue(card.querySelector('.step-number'), child.child_id, steps);
     });
+    ensureSignageAutoScroll();
+}
+
+function stopSignageAutoScroll() {
+    if (signageScrollInterval) clearInterval(signageScrollInterval);
+    if (signageScrollRetryTimer) clearTimeout(signageScrollRetryTimer);
+    signageScrollInterval = 0;
+    signageScrollRetryTimer = 0;
+}
+
+function scrollSignagePage() {
+    if (!document.body.classList.contains('signage-mode')) {
+        stopSignageAutoScroll();
+        return;
+    }
+    const grid = document.getElementById('studentGrid');
+    const maxScroll = grid.scrollHeight - grid.clientHeight;
+    if (maxScroll <= 1 || Date.now() < signageScrollPauseUntil) return;
+
+    const now = Date.now();
+    const pageDistance = Math.max(120, grid.clientHeight * 0.75);
+    let targetScroll = grid.scrollTop + signageScrollDirection * pageDistance;
+    if (signageScrollDirection > 0 && targetScroll >= maxScroll - 2) {
+        targetScroll = maxScroll;
+        signageScrollDirection = -1;
+        signageScrollPauseUntil = now + 2500;
+    } else if (signageScrollDirection < 0 && targetScroll <= 2) {
+        targetScroll = 0;
+        signageScrollDirection = 1;
+        signageScrollPauseUntil = now + 2500;
+    }
+    grid.scrollTo({ top: targetScroll, behavior: 'smooth' });
+}
+
+function ensureSignageAutoScroll() {
+    if (!document.body.classList.contains('signage-mode') || signageScrollInterval) return;
+    if (signageScrollRetryTimer) clearTimeout(signageScrollRetryTimer);
+    signageScrollRetryTimer = 0;
+
+    const grid = document.getElementById('studentGrid');
+    if (grid.scrollHeight - grid.clientHeight <= 1) {
+        signageScrollRetryTimer = setTimeout(() => {
+            signageScrollRetryTimer = 0;
+            ensureSignageAutoScroll();
+        }, 250);
+        return;
+    }
+    signageScrollInterval = setInterval(scrollSignagePage, 4500);
+}
+
+function setSignageMode(enabled, syncFullscreen = true) {
+    document.body.classList.toggle('signage-mode', enabled);
+    document.getElementById('signageToggleButton').setAttribute('aria-pressed', String(enabled));
+    document.getElementById('signageToggleButton').textContent =
+        enabled ? '通常表示に戻す' : 'サイネージ表示';
+    document.getElementById('signageExitButton').hidden = !enabled;
+
+    if (syncFullscreen && enabled && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch((error) => {
+            console.info('[ui] fullscreen unavailable; using signage view', error);
+        });
+    } else if (syncFullscreen && !enabled && document.fullscreenElement) {
+        document.exitFullscreen?.().catch((error) => {
+            console.info('[ui] could not exit fullscreen', error);
+        });
+    }
+    if (enabled) {
+        const grid = document.getElementById('studentGrid');
+        grid.scrollTop = 0;
+        signageScrollDirection = 1;
+        signageScrollPauseUntil = 0;
+        ensureSignageAutoScroll();
+    } else {
+        stopSignageAutoScroll();
+    }
 }
 
 function openStudentDetailModal(childId) {
@@ -625,19 +705,15 @@ async function openClassModal() {
     }
 }
 
-// クラス一覧と児童の所属クラス選択肢をモーダルへ描画する。
+// クラス一覧を管理モーダルへ描画する。
 async function refreshClassList() {
     const result = await apiRequest('/api/classes');
     document.getElementById('classList').innerHTML = (result.classes || []).map((item) => `
         <div class="class-row"><span>${escapeHtml(item.name)}（${item.child_count}人）</span>
-        <button type="button" data-rename-class="${item.class_id}">名前変更</button></div>`).join('');
-    const children = await apiRequest('/api/children');
-    document.getElementById('childAssignments').innerHTML = (children.children || []).map((child) => `
-        <label class="class-row"><span>${escapeHtml(child.name)}</span>
-        <select data-child-class="${child.child_id}">
-            <option value="">未所属</option>
-            ${(result.classes || []).map((item) => `<option value="${item.class_id}" ${item.class_id === child.class_id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
-        </select></label>`).join('');
+        <div class="class-actions">
+            <button type="button" data-rename-class="${item.class_id}">名前変更</button>
+            <button type="button" class="danger-button" data-delete-class="${item.class_id}" data-class-name="${escapeHtml(item.name)}" data-child-count="${item.child_count}">削除</button>
+        </div></div>`).join('') || '<p class="class-empty">クラスが登録されていません。</p>';
 }
 
 // 現在の児童間について、distance_inferの推論結果と関連度スコアを一覧表示する。
@@ -1047,6 +1123,23 @@ document.getElementById('menuButton').addEventListener('click', () => {
 });
 
 document.getElementById('closeMenuButton').addEventListener('click', closeMenu);
+document.getElementById('signageToggleButton').addEventListener('click', () => {
+    setSignageMode(!document.body.classList.contains('signage-mode'));
+});
+document.getElementById('signageExitButton').addEventListener('click', () => setSignageMode(false));
+document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && document.body.classList.contains('signage-mode')) {
+        setSignageMode(false, false);
+    } else {
+        ensureSignageAutoScroll();
+    }
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.body.classList.contains('signage-mode')) {
+        setSignageMode(false);
+    }
+});
+window.addEventListener('resize', ensureSignageAutoScroll);
 document.getElementById('openClassButton').addEventListener('click', () => { openClassModal(); });
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
@@ -1099,6 +1192,24 @@ document.getElementById('classForm').addEventListener('submit', async (event) =>
     }
 });
 document.getElementById('classList').addEventListener('click', async (event) => {
+    const deleteButton = event.target.closest('[data-delete-class]');
+    if (deleteButton) {
+        const classId = Number(deleteButton.dataset.deleteClass);
+        const className = deleteButton.dataset.className;
+        const childCount = Number(deleteButton.dataset.childCount);
+        const unassigned = childCount ? `所属している${childCount}人は未所属になります。` : '所属している子どもはいません。';
+        if (!confirm(`クラス「${className}」を削除しますか？\n${unassigned}\n子どもの計測データは削除されません。`)) return;
+        try {
+            const result = await apiRequest(`/api/classes/${classId}`, { method: 'DELETE' });
+            if (state.selectedClassId === classId) state.selectedClassId = null;
+            await loadClasses();
+            await refreshClassList();
+            setMessage('classMessage', result.msg || 'クラスを削除しました。');
+        } catch (error) {
+            setMessage('classMessage', error.message);
+        }
+        return;
+    }
     const button = event.target.closest('[data-rename-class]');
     if (!button) return;
     const name = prompt('新しいクラス名');
@@ -1108,15 +1219,6 @@ document.getElementById('classList').addEventListener('click', async (event) => 
         await refreshClassList();
         await loadClasses();
     } catch (error) { alert(error.message); }
-});
-document.getElementById('childAssignments').addEventListener('change', async (event) => {
-    const select = event.target.closest('[data-child-class]');
-    if (!select) return;
-    await apiRequest(`/api/children/${select.dataset.childClass}/class`, {
-        method: 'PATCH', body: JSON.stringify({ class_id: Number(select.value) || null })
-    });
-    await loadClasses();
-    await refreshClassList();
 });
 document.getElementById('studentManageList').addEventListener('change', async (event) => {
     const select = event.target.closest('[data-manage-class]');

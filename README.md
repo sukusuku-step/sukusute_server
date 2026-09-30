@@ -106,6 +106,7 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `GET` | `/api/classes` | クラス一覧 | ログイン中の教師にクラス一覧と児童数を返す |
 | `POST` | `/api/classes` | クラス追加 | 新しいクラスを作成する |
 | `PATCH` | `/api/classes/{class_id}` | クラス変更 | クラス名を変更する |
+| `DELETE` | `/api/classes/{class_id}` | クラス削除 | クラスを削除し、所属していた子どもは未所属に戻す。計測データは保持する |
 | `PATCH` | `/api/children/{child_id}/class` | 所属クラス変更 | 児童を指定クラスへ移動する。class_idをnullにすると未所属に戻す |
 | `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
 | `POST` | `/api/device_status` | M5端末状態受信 | バッテリー残量とWiFi RSSIをメモリ上の最新値として保持する |
