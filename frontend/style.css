@@ -214,6 +214,12 @@ body {
     box-shadow: 3px 3px 0 #555b5d;
 }
 
+.student-card .device-status,
+.student-card .student-status,
+.student-card .ml-summary {
+    display: none;
+}
+
 .student-name {
     max-width: 100%;
     font-size: 18px;
@@ -612,6 +618,54 @@ body {
     color: var(--ink);
     cursor: pointer;
     font-size: 25px;
+}
+
+.student-detail-modal {
+    width: min(620px, 100%);
+}
+
+.student-detail-content {
+    display: grid;
+    gap: 10px;
+}
+
+.student-detail-summary {
+    display: grid;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid #d9abad;
+    border-radius: 4px;
+    background: #fff;
+}
+
+.student-detail-summary strong {
+    color: var(--ink);
+    font-size: 16px;
+}
+
+.student-detail-summary span {
+    color: #6b5556;
+    font-size: 12px;
+}
+
+.student-detail-content > .device-status {
+    display: flex;
+    color: #6b5556;
+}
+
+.student-detail-content > .student-status {
+    display: block;
+    color: #6b5556;
+}
+
+.student-detail-content > .ml-summary {
+    display: grid;
+    margin-top: 0;
+    padding: 10px;
+    border: 1px solid #3b4143;
+    border-radius: 4px;
+    background: #080a0b;
+    color: #f4f5f5;
 }
 
 .inline-form {

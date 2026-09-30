@@ -88,6 +88,11 @@
     </aside>
     <!-- クラス管理・関係図・アカウント削除で共有するモーダル領域 -->
     <div id="modalLayer" class="modal-layer is-hidden">
+        <section id="studentDetailModal" class="modal-card student-detail-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="児童の詳細を閉じる">×</button>
+            <h2 id="studentDetailTitle">児童の詳細</h2>
+            <div id="studentDetailContent" class="student-detail-content"></div>
+        </section>
         <section id="classModal" class="modal-card is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
             <h2>クラスの管理</h2>

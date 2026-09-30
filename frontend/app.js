@@ -418,6 +418,7 @@ function renderStudents() {
             card = document.createElement('article');
             card.className = 'student-card';
             card.dataset.studentCard = String(child.child_id);
+            card.addEventListener('click', () => openStudentDetailModal(child.child_id));
             card.innerHTML = `
                 <div class="student-name"></div>
                 <div class="student-steps">歩数：<strong class="step-number"></strong></div>
@@ -555,6 +556,25 @@ function renderStudents() {
     });
 }
 
+function openStudentDetailModal(childId) {
+    const child = state.children.find((item) => item.child_id === childId);
+    const card = document.querySelector(`[data-student-card="${childId}"]`);
+    if (!child || !card) return;
+
+    document.getElementById('studentDetailTitle').textContent =
+        `${child.name || `児童${childId}`}の詳細`;
+    document.getElementById('studentDetailContent').innerHTML = `
+        <div class="student-detail-summary">
+            <strong>${escapeHtml(child.name || `児童${childId}`)}</strong>
+            <span>${escapeHtml(state.nearestNames[childId] ? `最も近くにいる人：${state.nearestNames[childId]}` : '近くにいる人：データなし')}</span>
+            <span>歩数：${(state.steps[childId] || 0).toLocaleString()}</span>
+        </div>
+        ${card.querySelector('.device-status')?.outerHTML || ''}
+        ${card.querySelector('.student-status')?.outerHTML || ''}
+        ${card.querySelector('.ml-summary')?.outerHTML || ''}`;
+    openModal('studentDetailModal');
+}
+
 // 現在表示中の児童から直近1分の歩数増加上位5名を描画する。
 function renderRanking() {
     const visibleChildIds = new Set(state.children.map((child) => child.child_id));
@@ -572,6 +592,7 @@ function renderRanking() {
 // 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。
 function renderWarnings(warnings) {
     const warningList = document.getElementById('warningList');
+    if (!warningList) return;
     const visibleChildIds = new Set(state.children.map((child) => child.child_id));
     const latestWarnings = new Map();
     for (const warning of warnings) {
