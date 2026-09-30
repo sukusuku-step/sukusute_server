@@ -55,6 +55,10 @@ class ChildClassRequest(pydantic.BaseModel):
     class_id: typing.Optional[int] = None
 
 
+class ChildDeleteRequest(pydantic.BaseModel):
+    child_ids: list[pydantic.PositiveInt] = pydantic.Field(min_length=1, max_length=500)
+
+
 # ===== デバイスから受信する児童データ =====
 
 class ChildSingleData(pydantic.BaseModel):

@@ -490,6 +490,59 @@ async def list_children(
     )
 
 
+@app.delete("/api/children", tags=["API", "Children"])
+async def delete_children(
+    data: http_models.ChildDeleteRequest,
+    teacher: TeacherDep,
+    dbsession: database_models.SessionDep,
+) -> http_models.Result:
+    """指定された児童と、歩数・距離・推論履歴をまとめて削除する。"""
+    child_ids = set(data.child_ids)
+    existing_ids = set((await dbsession.execute(
+        sqlalchemy.select(database_models.Child.child_id)
+        .where(database_models.Child.child_id.in_(child_ids))
+    )).scalars().all())
+    missing_ids = child_ids - existing_ids
+    if missing_ids:
+        raise fastapi.HTTPException(
+            404,
+            f"子どもIDが見つかりません: {', '.join(map(str, sorted(missing_ids)))}",
+        )
+
+    pair_condition = sqlalchemy.or_(
+        database_models.ChildDistanceData.child_id_1.in_(child_ids),
+        database_models.ChildDistanceData.child_id_2.in_(child_ids),
+    )
+    evaluation_pair_condition = sqlalchemy.or_(
+        database_models.ChildDistanceEvaluationHistory.child_id_1.in_(child_ids),
+        database_models.ChildDistanceEvaluationHistory.child_id_2.in_(child_ids),
+    )
+    await dbsession.execute(sqlalchemy.delete(
+        database_models.ChildDistanceEvaluationHistory
+    ).where(evaluation_pair_condition))
+    await dbsession.execute(sqlalchemy.delete(
+        database_models.ChildBehaviorDataEvaluationHistory
+    ).where(database_models.ChildBehaviorDataEvaluationHistory.child_id.in_(child_ids)))
+    await dbsession.execute(sqlalchemy.delete(
+        database_models.ChildDistanceData
+    ).where(pair_condition))
+    await dbsession.execute(sqlalchemy.delete(
+        database_models.SingleChildData
+    ).where(database_models.SingleChildData.child_id.in_(child_ids)))
+    await dbsession.execute(sqlalchemy.delete(
+        database_models.Child
+    ).where(database_models.Child.child_id.in_(child_ids)))
+    await dbsession.commit()
+
+    for child_id in child_ids:
+        device_statuses.pop(child_id, None)
+        ml.latest_anomaly_results.pop(child_id, None)
+
+    return http_models.Result(
+        status="ok", msg=f"{len(child_ids)}人の子どもと関連データを削除しました"
+    )
+
+
 # ===== 歩数データAPI =====
 
 @app.get("/api/children/{child_id:int}/steps", tags=["API"])

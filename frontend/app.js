@@ -886,20 +886,73 @@ async function refreshStudentManageList() {
         apiRequest('/api/classes')
     ]);
     const classes = classesResult.classes || [];
-    document.getElementById('studentManageList').innerHTML = (childrenResult.children || []).map((child) => {
+    const children = childrenResult.children || [];
+    const classNames = new Map(classes.map((item) => [item.class_id, item.name]));
+    document.getElementById('studentManageCount').textContent = `${children.length}人`;
+    document.getElementById('studentManageList').innerHTML = children.length ? children.map((child) => {
         const isTeacher = isTeacherFlag(child.child_id);
-        return `<div class="student-manage-row ${isTeacher ? 'is-teacher' : ''}" data-manage-row="${child.child_id}">
-            <span class="student-manage-name">${escapeHtml(child.name)}${isTeacher ? '<span class="teacher-badge" title="先生の端末">🧑‍🏫 先生</span>' : ''}</span>
-            <select data-manage-class="${child.child_id}">
+        return `<tr class="student-manage-row ${isTeacher ? 'is-teacher' : ''}" data-manage-row="${child.child_id}">
+            <td>${child.child_id}</td>
+            <td class="student-manage-name">${escapeHtml(child.name)}</td>
+            <td><select data-manage-class="${child.child_id}" aria-label="${escapeHtml(child.name)}の所属クラス">
                 <option value="">未所属</option>
                 ${classes.map((item) => `<option value="${item.class_id}" ${item.class_id === child.class_id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
-            </select>
-            <label class="teacher-checkbox">
+            </select></td>
+            <td><label class="teacher-checkbox">
                 <input type="checkbox" data-manage-teacher="${child.child_id}" ${isTeacher ? 'checked' : ''}>
-                先生
-            </label>
-        </div>`;
-    }).join('');
+                先生用
+            </label></td>
+        </tr>`;
+    }).join('') : '<tr><td colspan="4">登録されている子どもはいません</td></tr>';
+    document.getElementById('studentDeleteList').innerHTML = children.length ? children.map((child) => `
+        <tr>
+            <td><input type="checkbox" data-delete-child="${child.child_id}" aria-label="${escapeHtml(child.name)}を削除対象にする"></td>
+            <td>${child.child_id}</td>
+            <td>${escapeHtml(child.name)}</td>
+            <td>${escapeHtml(classNames.get(child.class_id) || '未所属')}</td>
+        </tr>`).join('') : '<tr><td colspan="4">削除できる子どもはいません</td></tr>';
+    document.getElementById('selectAllStudentDelete').checked = false;
+    updateStudentDeleteSelection();
+}
+
+function updateStudentDeleteSelection() {
+    const checkboxes = [...document.querySelectorAll('[data-delete-child]')];
+    const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+    const selectAll = document.getElementById('selectAllStudentDelete');
+    selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    document.getElementById('studentDeleteSelectionCount').textContent = `${selectedCount}人選択中`;
+    document.getElementById('deleteSelectedChildrenButton').disabled = selectedCount === 0;
+}
+
+async function deleteSelectedChildren() {
+    const childIds = [...document.querySelectorAll('[data-delete-child]:checked')]
+        .map((checkbox) => Number(checkbox.dataset.deleteChild));
+    if (!childIds.length) return;
+    if (!confirm(`選択した${childIds.length}人の子どもと関連データを削除します。よろしいですか？`)) return;
+
+    const button = document.getElementById('deleteSelectedChildrenButton');
+    button.disabled = true;
+    setMessage('studentDeleteMessage', '削除中...');
+    try {
+        const result = await apiRequest('/api/children', {
+            method: 'DELETE',
+            body: JSON.stringify({ child_ids: childIds })
+        });
+        childIds.forEach((childId) => {
+            state.teacherFlags.delete(childId);
+            delete state.mlBehavior[childId];
+            delete state.mlAnomalies[childId];
+            delete state.mlDetailOpenStates[childId];
+        });
+        localStorage.setItem('sukusuteTeacherFlags', JSON.stringify([...state.teacherFlags]));
+        await Promise.all([loadDashboard(), refreshStudentManageList()]);
+        setMessage('studentManageMessage', result.msg || '子どもを削除しました。');
+        openModal('studentManageModal');
+    } catch (error) {
+        setMessage('studentDeleteMessage', error.message);
+        button.disabled = false;
+    }
 }
 
 // 指定したモーダルだけを表示する。
@@ -1086,6 +1139,19 @@ document.getElementById('studentManageList').addEventListener('change', async (e
         renderStudents();
     }
 });
+document.getElementById('openStudentDeleteModalButton').addEventListener('click', () => {
+    setMessage('studentDeleteMessage', '');
+    updateStudentDeleteSelection();
+    openModal('studentDeleteModal');
+});
+document.getElementById('studentDeleteList').addEventListener('change', updateStudentDeleteSelection);
+document.getElementById('selectAllStudentDelete').addEventListener('change', (event) => {
+    document.querySelectorAll('[data-delete-child]').forEach((checkbox) => {
+        checkbox.checked = event.target.checked;
+    });
+    updateStudentDeleteSelection();
+});
+document.getElementById('deleteSelectedChildrenButton').addEventListener('click', deleteSelectedChildren);
 document.getElementById('accountDeleteForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!confirm('アカウントを削除しますか？この操作は取り消せません。')) return;

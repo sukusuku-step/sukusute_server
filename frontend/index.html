@@ -136,12 +136,38 @@
                 <span class="legend-edge high"></span><small>高い</small>
             </div>
         </section>
-        <section id="studentManageModal" class="modal-card is-hidden">
-            <button class="modal-close" data-close-modal type="button">×</button>
+        <section id="studentManageModal" class="modal-card student-manage-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="子ども管理を閉じる">×</button>
             <h2>子どもの管理</h2>
-            <p class="modal-caption">クラスの割り振りと、先生に取り付けているデバイスにはチェックを入れてください。</p>
-            <div id="studentManageMessage" class="form-message"></div>
-            <div id="studentManageList" class="student-manage-list"></div>
+            <p class="modal-caption">所属クラスと先生用端末の設定を変更できます。</p>
+            <div class="student-manage-toolbar">
+                <span id="studentManageCount" class="table-count">0人</span>
+                <button id="openStudentDeleteModalButton" class="danger-button" type="button">子どもを削除...</button>
+            </div>
+            <div id="studentManageMessage" class="form-message" role="status"></div>
+            <div class="student-table-wrap">
+                <table class="student-manage-table">
+                    <thead><tr><th scope="col">ID</th><th scope="col">名前</th><th scope="col">所属クラス</th><th scope="col">端末</th></tr></thead>
+                    <tbody id="studentManageList"><tr><td colspan="4">読み込み中...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+        <section id="studentDeleteModal" class="modal-card student-delete-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="子どもの削除を閉じる">×</button>
+            <h2>子どもの削除</h2>
+            <p class="modal-caption delete-warning">選択した子どもと、歩数・距離・推論履歴を削除します。この操作は取り消せません。</p>
+            <div id="studentDeleteMessage" class="form-message" role="alert"></div>
+            <div class="delete-selection-toolbar">
+                <label><input id="selectAllStudentDelete" type="checkbox">すべて選択</label>
+                <span id="studentDeleteSelectionCount" aria-live="polite">0人選択中</span>
+            </div>
+            <div class="student-table-wrap">
+                <table class="student-manage-table student-delete-table">
+                    <thead><tr><th scope="col">選択</th><th scope="col">ID</th><th scope="col">名前</th><th scope="col">所属クラス</th></tr></thead>
+                    <tbody id="studentDeleteList"></tbody>
+                </table>
+            </div>
+            <button id="deleteSelectedChildrenButton" class="danger-button" type="button" disabled>選択した子どもを削除</button>
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
