@@ -50,12 +50,12 @@
             <div id="classSummary" class="class-summary" aria-label="登録済みクラス"></div>
             <div id="refreshMessage" class="refresh-message" role="status"></div>
             <div class="dashboard-layout">
-                <section class="students-panel" aria-label="児童の状態・推論結果一覧">
+                <section class="students-panel" aria-label="子どもの状態・推論結果一覧">
                     <div class="student-panel-heading">
-                        <h2>児童ごとのステータス表示</h2>
-                        <p>最新の姿勢状態・走行状態・活動量、他児童との距離状態・関連度スコアを表示します。</p>
+                        <h2>子どもごとのステータス</h2>
+                        <p>最新の姿勢・走行・活動量と、子ども同士の距離・関連度を表示します。</p>
                     </div>
-                    <div id="studentGrid" class="student-grid"><div class="loading">児童データを読み込み中...</div></div>
+                    <div id="studentGrid" class="student-grid"><div class="loading">子どものデータを読み込み中...</div></div>
                 </section>
                 <aside class="ranking-panel">
                     <h2>歩数増加ランキング（1分間）</h2>
@@ -81,7 +81,7 @@
         <button data-action="related-network">関係ネットワーク図を見る</button>
         <button data-action="relation">相関関係を一覧で見る</button>
         <button data-action="class">所属クラスの管理</button>
-        <button data-action="student-manage">児童データの管理</button>
+        <button data-action="student-manage">子どもの管理</button>
         <button data-action="refresh">ステータスの更新 ↻</button>
         <button data-action="account-delete">アカウントを削除 ⌫</button>
         <button data-action="logout">ログアウト ⇥</button>
@@ -89,8 +89,8 @@
     <!-- クラス管理・関係図・アカウント削除で共有するモーダル領域 -->
     <div id="modalLayer" class="modal-layer is-hidden">
         <section id="studentDetailModal" class="modal-card student-detail-modal is-hidden">
-            <button class="modal-close" data-close-modal type="button" aria-label="児童の詳細を閉じる">×</button>
-            <h2 id="studentDetailTitle">児童の詳細</h2>
+            <button class="modal-close" data-close-modal type="button" aria-label="子どもの詳細を閉じる">×</button>
+            <h2 id="studentDetailTitle">子どもの詳細</h2>
             <div id="studentDetailContent" class="student-detail-content"></div>
         </section>
         <section id="classModal" class="modal-card is-hidden">
@@ -99,7 +99,7 @@
             <form id="classForm" class="inline-form"><input id="newClassName" placeholder="新しいクラス名" required><button class="primary-button">追加</button></form>
             <div id="classMessage" class="form-message"></div>
             <div id="classList" class="class-list"></div>
-            <h3>児童の所属クラス</h3>
+            <h3>子どもの所属クラス</h3>
             <div id="childAssignments" class="class-list"></div>
         </section>
         <section id="accountDeleteModal" class="modal-card is-hidden">
@@ -115,13 +115,13 @@
         </section>
         <section id="relationModal" class="modal-card relation-modal is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>各児童間の相関関係</h2><p class="modal-caption">児童間の最新の距離状態のステータスと、その履歴から算出した関連度スコアを一覧で確認できます。</p>
+            <h2>子ども同士の相関関係</h2><p class="modal-caption">子ども同士の最新の距離状態と、履歴から算出した関連度スコアを一覧で確認できます。</p>
             <div id="relationGraph" class="relation-graph"></div>
         </section>
         <section id="relatedNetworkModal" class="modal-card related-network-modal is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>児童間の関係ネットワーク図</h2>
-            <p class="modal-caption">線が太いほど児童間の関連度が高いことを表します。線をクリックすると詳細を確認できます。関連度スコアが0の場合は線が描画されません。</p>
+            <h2>子ども同士の関係ネットワーク図</h2>
+            <p class="modal-caption">線が太いほど子ども同士の関係が強いことを表します。線をクリックすると詳細を確認できます。関連度スコアが0の場合は線が描画されません。</p>
             <div class="network-layout">
                 <div id="relatedNetworkGraph" class="related-network-graph"></div>
                 <aside id="networkEdgeDetail" class="network-edge-detail">
@@ -138,7 +138,7 @@
         </section>
         <section id="studentManageModal" class="modal-card is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>生徒管理</h2>
+            <h2>子どもの管理</h2>
             <p class="modal-caption">クラスの割り振りと、先生に取り付けているデバイスにはチェックを入れてください。</p>
             <div id="studentManageMessage" class="form-message"></div>
             <div id="studentManageList" class="student-manage-list"></div>

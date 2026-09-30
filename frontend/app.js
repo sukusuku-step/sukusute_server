@@ -358,7 +358,7 @@ async function loadDashboard() {
             const studentGrid = document.getElementById('studentGrid');
 
             if (studentGrid) {
-                studentGrid.innerHTML = '<div class="loading">児童データを取得できませんでした。</div>';
+                studentGrid.innerHTML = '<div class="loading">子どものデータを取得できませんでした。</div>';
             }
         }
 
@@ -382,7 +382,7 @@ function getWifiSignalLevel(wifiRssi) {
 function renderStudents() {
     const grid = document.getElementById('studentGrid');
     if (!state.children.length) {
-        grid.innerHTML = '<div class="loading">このクラスに児童データがありません</div>';
+        grid.innerHTML = '<div class="loading">このクラスに子どものデータがありません</div>';
         return;
     }
     grid.querySelector('.loading')?.remove();
@@ -407,7 +407,7 @@ function renderStudents() {
 
         const steps = state.steps[child.child_id] || 0;
         const isTeacher = isTeacherFlag(child.child_id);
-        const nameHtml = `${escapeHtml(child.name || `児童${child.child_id}`)}
+        const nameHtml = `${escapeHtml(child.name || `子ども${child.child_id}`)}
                             ${isTeacher ? 
                                 '<span class="teacher-badge" title="先生の端末">🧑\u200d🏫 先生</span>' : ''
                             }`;
@@ -479,7 +479,7 @@ function renderStudents() {
                 const relation = state.mlRelations[relationKey(child.child_id, other.child_id)];
                 return `
                     <div class="relation-score-row">
-                        <strong>${escapeHtml(other.name || `児童${other.child_id}`)}</strong>
+                        <strong>${escapeHtml(other.name || `子ども${other.child_id}`)}</strong>
                         <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                         <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                         <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
@@ -509,13 +509,13 @@ function renderStudents() {
                     </div>` : '<p class="ml-empty">計測したデータがまだありません</p>'}
             </div>
             <details class="relation-details" ${state.mlDetailOpenStates[child.child_id]?.relation ? 'open' : ''}>
-                <summary>他児童との距離状態・関連度スコア</summary>
+                <summary>ほかの子どもとの距離状態・関連度スコア</summary>
                 <div class="relation-score-list">
-                    ${relationRows || '<p class="ml-empty">比較対象の児童がいません</p>'}
+                    ${relationRows || '<p class="ml-empty">比較できる子どもはいません</p>'}
                 </div>
             </details>
             <details class="baseline-details" ${state.mlDetailOpenStates[child.child_id]?.baseline ? 'open' : ''}>
-                <summary>この児童の普段のステータス（ベースライン）</summary>
+                <summary>この子の普段のステータス（基準値）</summary>
                 ${behavior ? `
                     <div class="baseline-grid">
                         <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / ばらつき ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
@@ -561,10 +561,10 @@ function openStudentDetailModal(childId) {
     if (!child || !card) return;
 
     document.getElementById('studentDetailTitle').textContent =
-        `${child.name || `児童${childId}`}の詳細`;
+        `${child.name || `子ども${childId}`}の詳細`;
     document.getElementById('studentDetailContent').innerHTML = `
         <div class="student-detail-summary">
-            <strong>${escapeHtml(child.name || `児童${childId}`)}</strong>
+            <strong>${escapeHtml(child.name || `子ども${childId}`)}</strong>
             <span>${escapeHtml(state.nearestNames[childId] ? `最も近くにいる人：${state.nearestNames[childId]}` : '近くにいる人：データなし')}</span>
             <span>歩数：${(state.steps[childId] || 0).toLocaleString()}</span>
         </div>
@@ -583,7 +583,7 @@ function renderRanking() {
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
         const entry = ranking[index];
         item.innerHTML = entry
-            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `児童${entry.child_id}`)}</strong>`
+            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `子ども${entry.child_id}`)}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
 }
@@ -658,7 +658,7 @@ function renderRelationSummary() {
                 </div>`);
         }
     }
-    graph.innerHTML = rows.length ? rows.join('') : '<span>比較できる児童データがありません</span>';
+    graph.innerHTML = rows.length ? rows.join('') : '<span>比較できる子どものデータがありません</span>';
 }
 
 async function openRelationModal() {
@@ -681,7 +681,7 @@ function renderRelatedNetwork() {
     const children = state.children;
 
     if (children.length < 2) {
-        container.innerHTML = '<p>関係を表示できる児童が不足しています。</p>';
+        container.innerHTML = '<p>関係を表示できる子どもの数が足りません。</p>';
         return;
     }
 
@@ -786,7 +786,7 @@ function renderRelatedNetwork() {
             class="network-svg"
             viewBox="0 0 ${width} ${height}"
             role="img"
-            aria-label="児童間の関係ネットワーク図">
+            aria-label="子ども同士の関係ネットワーク図">
 
             ${edges}
             ${nodeHtml}
