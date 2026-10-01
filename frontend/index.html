@@ -56,7 +56,22 @@
             <div id="refreshMessage" class="refresh-message" role="status"></div>
             <div class="dashboard-layout">
                 <section class="students-panel" aria-label="子どもの状態・推論結果一覧">
-                    <section id="modelAnomalyPanel" class="model-anomaly-panel" aria-live="polite" hidden>
+                    <div class="student-panel-heading">
+                        <h2>子どもごとのステータス</h2>
+                        <p>最新の姿勢・走行・活動量と、子ども同士の距離・関連度を表示します。</p>
+                    </div>
+                    <div id="studentGrid" class="student-grid"><div class="loading">子どものデータを読み込み中...</div></div>
+                </section>
+                <aside class="ranking-sidebar">
+                    <section class="ranking-panel">
+                        <h2>歩数増加ランキング（1分間）</h2>
+                        <ol id="rankingList" class="ranking-list">
+                            <li><span>1.</span><strong>-</strong></li><li><span>2.</span><strong>-</strong></li>
+                            <li><span>3.</span><strong>-</strong></li><li><span>4.</span><strong>-</strong></li>
+                            <li><span>5.</span><strong>-</strong></li>
+                        </ol>
+                    </section>
+                    <section id="modelAnomalyPanel" class="model-anomaly-panel" aria-live="polite">
                         <div class="model-anomaly-heading">
                             <span class="model-anomaly-mark" aria-hidden="true">!</span>
                             <h2>モデル異常検知</h2>
@@ -64,19 +79,6 @@
                         </div>
                         <ul id="modelAnomalyList" class="model-anomaly-list"></ul>
                     </section>
-                    <div class="student-panel-heading">
-                        <h2>子どもごとのステータス</h2>
-                        <p>最新の姿勢・走行・活動量と、子ども同士の距離・関連度を表示します。</p>
-                    </div>
-                    <div id="studentGrid" class="student-grid"><div class="loading">子どものデータを読み込み中...</div></div>
-                </section>
-                <aside class="ranking-panel">
-                    <h2>歩数増加ランキング（1分間）</h2>
-                    <ol id="rankingList" class="ranking-list">
-                        <li><span>1.</span><strong>-</strong></li><li><span>2.</span><strong>-</strong></li>
-                        <li><span>3.</span><strong>-</strong></li><li><span>4.</span><strong>-</strong></li>
-                        <li><span>5.</span><strong>-</strong></li>
-                    </ol>
                 </aside>
             </div>
         </main>
@@ -189,6 +191,6 @@
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
-    <script src="app.js?v=20261001-display-switch-fix1"></script>
+    <script src="app.js?v=20261001-warning-panel-fix1"></script>
 </body>
 </html>

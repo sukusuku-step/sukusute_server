@@ -736,9 +736,14 @@ function renderModelAnomalyWarnings() {
             <ul>${reasons.join('')}</ul>
         </li>`];
     });
-    list.innerHTML = items.join('');
-    document.getElementById('modelAnomalyCount').textContent = `${items.length}人に異常を検知`;
-    panel.hidden = items.length === 0;
+    list.innerHTML = items.length
+        ? items.join('')
+        : '<li class="model-anomaly-clear">現在、警告はありません。</li>';
+    document.getElementById('modelAnomalyCount').textContent = items.length
+        ? `${items.length}人に異常を検知`
+        : '警告なし';
+    panel.hidden = false;
+    panel.classList.toggle('is-clear', items.length === 0);
 }
 
 // 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。

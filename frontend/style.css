@@ -235,6 +235,13 @@ body {
     align-items: start;
 }
 
+.ranking-sidebar {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-width: 0;
+}
+
 .students-panel {
     position: relative;
     min-width: 0;
@@ -645,7 +652,7 @@ body.square-mode .nearest-person {
 .model-anomaly-panel {
     flex: 0 0 auto;
     width: 100%;
-    margin: 0 0 12px;
+    margin: 0;
     border: 2px solid #b71c1c;
     background: rgba(255, 247, 248, .96);
     animation: model-anomaly-border-pulse 1.2s ease-in-out infinite;
@@ -692,6 +699,27 @@ body.square-mode .nearest-person {
     margin: 0;
     padding: 8px;
     list-style: none;
+}
+
+.model-anomaly-panel.is-clear {
+    border-color: rgba(121, 100, 128, .42);
+    background: rgba(255, 253, 255, .92);
+    animation: none;
+}
+
+.model-anomaly-panel.is-clear .model-anomaly-heading {
+    border-bottom-color: rgba(121, 100, 128, .2);
+    color: #493550;
+}
+
+.model-anomaly-panel.is-clear .model-anomaly-mark {
+    background: #796480;
+}
+
+.model-anomaly-clear {
+    padding: 10px 12px;
+    color: #5d5361;
+    font-size: 11px;
 }
 
 .model-anomaly-item {
