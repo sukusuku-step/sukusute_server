@@ -17,9 +17,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, relationship,
 from sqlalchemy.sql.expression import tuple_
 
 # プロジェクトルートのDBを常に参照する。起動ディレクトリに依存させない。
-DATABASE_PATH = pathlib.Path(__file__).resolve().parent.parent / "data.sqlite"
 engine = create_async_engine(
-    f"sqlite+aiosqlite:///{DATABASE_PATH.as_posix()}"
+        f"postgresql+asyncpg://sukusute:sukusute@127.0.0.1:5432/sukusute"
 )
 
 
@@ -27,7 +26,6 @@ async def get_session():
     """各リクエストへ非同期SQLAlchemyセッションを注入する。"""
     async with AsyncSession(engine) as session:
         yield session
-
 
 # SessionDep: FastAPIの依存性注入用型エイリアス
 SessionDep: typing.TypeAlias = typing.Annotated[

@@ -13,9 +13,8 @@ import sukusute_server
 config = context.config
 
 # Alembic実行時のカレントディレクトリに関係なく、アプリと同じDBを更新する。
-database_path = pathlib.Path(__file__).resolve().parent.parent / "data.sqlite"
 config.set_main_option(
-    "sqlalchemy.url", f"sqlite:///{database_path.as_posix()}"
+    "sqlalchemy.url", f"postgresql+psycopg2://sukusute:sukusute@127.0.0.1:5432/sukusute"
 )
 
 # Interpret the config file for Python logging.
