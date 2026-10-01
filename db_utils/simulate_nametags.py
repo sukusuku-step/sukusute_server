@@ -18,6 +18,9 @@ import requests
 
 
 MAX_SIMULATED_DEVICES = 30
+SAMPLES_PER_MINUTE = 10 * 60
+NORMAL_STEPS_PER_MINUTE = 49
+LOW_ACTIVITY_STEPS_PER_MINUTE = 1
 FAMILY_NAMES = [
     "Sato", "Suzuki", "Takahashi", "Tanaka", "Ito", "Watanabe", "Yamamoto", "Nakamura", "Kobayashi", "Kato",
     "Yoshida", "Yamada", "Sasaki", "Yamaguchi", "Matsumoto", "Inoue", "Kimura", "Hayashi", "Shimizu", "Saito",
@@ -144,7 +147,11 @@ def make_csv_batch(
         sample_index = device.samples_sent + row_index
         phase = sample_index * math.tau / 7.0
         low_activity_now = device.low_activity and advance_steps
-        if advance_steps and not device.low_activity and device.rng.random() < 0.14:
+        steps_per_minute = (
+            LOW_ACTIVITY_STEPS_PER_MINUTE if device.low_activity
+            else NORMAL_STEPS_PER_MINUTE
+        )
+        if advance_steps and device.rng.random() < steps_per_minute / SAMPLES_PER_MINUTE:
             device.steps += 1
 
         motion_scale = 0.08 if low_activity_now else 1.0
