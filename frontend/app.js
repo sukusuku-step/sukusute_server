@@ -259,6 +259,13 @@ function dateQuery(date) {
     return `year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`;
 }
 
+function isToday(date) {
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear()
+        && date.getMonth() === now.getMonth()
+        && date.getDate() === now.getDate();
+}
+
 // ===== ログイン画面とダッシュボード初期化 =====
 // ログインAPIを呼び、成功したトークンをブラウザへ保存する。
 
@@ -403,6 +410,7 @@ function getWifiSignalLevel(wifiRssi) {
 // 児童を歩数順に並べ、歩数カードをHTMLへ描画する。カードはDOMを使い回し、歩数だけスロット風に更新する。
 function renderStudents() {
     const grid = document.getElementById('studentGrid');
+    const isSelectedToday = isToday(state.selectedDate);
     if (!state.children.length) {
         grid.innerHTML = '<div class="loading">このクラスに子どものデータがありません</div>';
         ensureSignageAutoScroll();
@@ -426,7 +434,7 @@ function renderStudents() {
         const deviceStatus = state.deviceStatuses[child.child_id];
         const statusAge = deviceStatus ? Date.now() - Date.parse(deviceStatus.updated_at) : Infinity;
         const isDeviceStatusFresh = statusAge >= 0 && statusAge < DEVICE_STATUS_STALE_MS;
-        const currentDeviceStatus = isDeviceStatusFresh ? deviceStatus : null;
+        const currentDeviceStatus = isSelectedToday && isDeviceStatusFresh ? deviceStatus : null;
         const wifiSignalLevel = currentDeviceStatus ? getWifiSignalLevel(currentDeviceStatus.wifi_rssi) : 0;
         const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : ' : 接続なし';
         const wifiDescription = currentDeviceStatus
@@ -472,12 +480,14 @@ function renderStudents() {
         } else {
             nearestPerson?.remove();
         }
-        card.querySelector('.device-status').innerHTML = `
+        const deviceStatusElement = card.querySelector('.device-status');
+        deviceStatusElement.hidden = !isSelectedToday;
+        deviceStatusElement.innerHTML = isSelectedToday ? `
             <span>BATTERY : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'データなし'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
             <span class="wifi-status" role="img" aria-label="${wifiDescription}" title="${wifiDescription}">
                 <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
                 <span>Wi-Fi ${wifiRssiLabel}</span>
-            </span>`;
+            </span>` : '';
         card.querySelector('.student-status').className = 'student-status';
         card.querySelector('.student-status').innerHTML = '';
 
