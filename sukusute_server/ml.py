@@ -10,7 +10,7 @@ import sukusute_machine_learning.utils.relatedness
 
 import sukusute_server.database_models
 
-ANOMALY_THRESHOLD_RATIO = 0.050 # 異常検知のしきい値（何%内まで正常とみなすか）
+ANOMALY_THRESHOLD_RATIO = 0.50 # 異常検知のしきい値（何%内まで正常とみなすか）
 ANOMALY_EPS = 1e-6
 
 latest_anomaly_results: dict[int, dict] = {}

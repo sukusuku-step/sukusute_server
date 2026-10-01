@@ -1572,6 +1572,12 @@ body.square-mode.signage-mode .nearest-person {
 /* ===== ML推論・ベースライン・関連度 ===== */
 .student-panel-heading {
     margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid rgba(228, 212, 223, .9);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .82);
+    box-shadow: 0 2px 8px rgba(60, 35, 60, .06);
+    backdrop-filter: blur(8px);
 }
 
 .student-panel-heading h2 {
