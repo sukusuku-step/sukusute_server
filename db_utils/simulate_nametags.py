@@ -40,7 +40,7 @@ class SimulatedNametag:
     started_at: dt.datetime = field(default_factory=dt.datetime.now)
     x: float = 0.0
     y: float = 0.0
-    steps: int = 0
+    steps: int = 30
     samples_sent: int = 0
     battery: int = 0
     peers: list[SimulatedNametag] = field(default_factory=list)
@@ -104,13 +104,14 @@ def distance_to_rssi(distance_m: float) -> int:
 def create_devices(
     enrolled: list[tuple[str, int]], rng: random.Random, initial_samples: int = 100
 ) -> list[SimulatedNametag]:
+    started_at = dt.datetime.now() - dt.timedelta(seconds=(initial_samples - 1) / 10.0)
     devices = [
         SimulatedNametag(
             slot=slot,
             name=name,
             child_id=child_id,
             rng=random.Random(rng.randrange(2**32)),
-            started_at=dt.datetime.now() - dt.timedelta(seconds=(initial_samples - 1) / 10.0),
+            started_at=started_at,
             x=rng.uniform(0, 10),
             y=rng.uniform(0, 10),
             battery=rng.randint(65, 100),
@@ -125,7 +126,9 @@ def create_devices(
     return devices
 
 
-def make_csv_batch(device: SimulatedNametag, samples: int) -> str:
+def make_csv_batch(
+    device: SimulatedNametag, samples: int, advance_steps: bool = True
+) -> str:
     output = io.StringIO(newline="")
     writer = csv.writer(output, lineterminator="\n")
     writer.writerow(CSV_HEADER + [f"Distance_{peer.child_id}" for peer in device.peers])
@@ -134,7 +137,7 @@ def make_csv_batch(device: SimulatedNametag, samples: int) -> str:
     for row_index in range(samples):
         sample_index = device.samples_sent + row_index
         phase = sample_index * math.tau / 7.0
-        if device.rng.random() < 0.14:
+        if advance_steps and device.rng.random() < 0.14:
             device.steps += 1
 
         ax = 0.08 * math.sin(phase) + device.rng.gauss(0, 0.025)
@@ -167,7 +170,12 @@ def make_csv_batch(device: SimulatedNametag, samples: int) -> str:
     return output.getvalue()
 
 
-def send_device_batch(base_url: str, device: SimulatedNametag, samples: int) -> None:
+def send_device_batch(
+    base_url: str,
+    device: SimulatedNametag,
+    samples: int,
+    advance_steps: bool = True,
+) -> None:
     if device.rng.random() < 0.01:
         device.battery = max(5, device.battery - 1)
 
@@ -182,9 +190,9 @@ def send_device_batch(base_url: str, device: SimulatedNametag, samples: int) -> 
     )
     response = requests.post(
         f"{base_url}/api/push_csv/{device.child_id}",
-        data=make_csv_batch(device, samples).encode("utf-8"),
+        data=make_csv_batch(device, samples, advance_steps).encode("utf-8"),
         headers={"Content-Type": "text/csv"},
-        timeout=30,
+        timeout=300,
     )
     response.raise_for_status()
 
@@ -199,12 +207,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--count", type=int, default=30, help="シミュレーション台数")
     parser.add_argument("--interval", type=float, default=10.0, help="送信周期（秒）")
     parser.add_argument("--samples", type=int, default=100, help="1回あたりのCSVサンプル数（実機は100）")
+    parser.add_argument("--warmup-samples", type=int, default=6000, help="初回にまとめて送る10Hzサンプル数（推論には6000以上必要）")
     parser.add_argument("--workers", type=int, default=6, help="同時送信スレッド数")
     parser.add_argument("--cycles", type=int, default=0, help="送信回数。0ならCtrl+Cまで継続")
     parser.add_argument("--seed", type=int, help="乱数シード（名前・センサー値を再現）")
     args = parser.parse_args()
-    if args.count < 1 or args.interval <= 0 or args.samples < 1 or args.workers < 1 or args.cycles < 0:
-        parser.error("count/samples/workersは1以上、intervalは0より大きく、cyclesは0以上にしてください")
+    if args.count < 1 or args.interval <= 0 or args.samples < 1 or args.warmup_samples < 6000 or args.workers < 1 or args.cycles < 0:
+        parser.error("count/samples/workersは1以上、warmup-samplesは6000以上、intervalは0より大きく、cyclesは0以上にしてください")
     return args
 
 
@@ -222,12 +231,31 @@ def main() -> int:
         print(f"サーバー接続または児童登録に失敗しました: {error}", file=sys.stderr)
         return 1
 
-    devices = create_devices(enrolled, rng, args.samples)
+    devices = create_devices(enrolled, rng, args.warmup_samples)
     print(f"{base_url} に接続しました。{len(devices)}台の名札をシミュレーションします。")
     print("CSV: 実機と同じ10Hzサンプル、加速度/ジャイロ/地磁気9軸、BLE距離列")
     print("端末状態: battery と wifi_rssi を送信。Ctrl+Cで停止します。")
     for device in devices:
         print(f"  {device.child_id:>3}: {device.name}")
+
+    total_pairs = len(devices) * (len(devices) - 1) // 2
+    print(f"初回ウォームアップ: 全{total_pairs}ペア分の距離データを{args.warmup_samples}件ずつ順番に送信します...")
+    for device in devices:
+        nearby_peers = device.peers
+        device.peers = [other for other in devices if other.child_id > device.child_id]
+        device.started_at = dt.datetime.now() - dt.timedelta(
+            seconds=(args.warmup_samples - 1) / 10.0
+        )
+        try:
+            send_device_batch(
+                base_url, device, args.warmup_samples, advance_steps=False
+            )
+        except requests.RequestException as error:
+            print(f"初回ウォームアップの送信に失敗しました: {device.name}: {error}", file=sys.stderr)
+            return 1
+        finally:
+            device.peers = nearby_peers
+    print("関係推論用の初期データを送信しました。通常送信を開始します。")
 
     cycle = 0
     try:

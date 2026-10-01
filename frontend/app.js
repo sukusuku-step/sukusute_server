@@ -234,6 +234,7 @@ async function loadMlResults(force = false) {
     state.mlRelations = nextRelations;
     state.mlUpdatedAt = now;
     state.mlChildSignature = signature;
+    renderModelAnomalyWarnings();
 }
 
 // 日付をAPIのクエリパラメータ形式へ変換する。
@@ -690,6 +691,27 @@ function renderRanking() {
             ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `子ども${entry.child_id}`)}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
+}
+
+function renderModelAnomalyWarnings() {
+    const panel = document.getElementById('modelAnomalyPanel');
+    const list = document.getElementById('modelAnomalyList');
+    const items = state.children.flatMap((child) => {
+        const anomaly = state.mlAnomalies[child.child_id];
+        if (anomaly?.warning !== true) return [];
+        const reasons = Object.entries(anomaly.comparisons || {})
+            .filter(([, comparison]) => comparison.warning === true)
+            .map(([feature, comparison]) =>
+                `<li>${escapeHtml(formatAnomalyChange(feature, comparison))}</li>`
+            );
+        if (!reasons.length) return [];
+        return [`<li class="model-anomaly-item">
+            <strong>${escapeHtml(child.name || `子ども${child.child_id}`)}</strong>
+            <ul>${reasons.join('')}</ul>
+        </li>`];
+    });
+    list.innerHTML = items.join('');
+    panel.hidden = items.length === 0;
 }
 
 // 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。

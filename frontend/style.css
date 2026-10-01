@@ -378,6 +378,63 @@ body {
     font-weight: 700;
 }
 
+.model-anomaly-panel {
+    margin-top: 10px;
+    border: 1px solid #d49b4d;
+    background: #fff1d7;
+}
+
+.model-anomaly-panel h2 {
+    margin: 0;
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2bd82;
+    color: #6d3b0b;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.model-anomaly-list,
+.model-anomaly-item ul {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+    padding: 8px 8px 8px 25px;
+    list-style: none;
+}
+
+.model-anomaly-list {
+    max-height: 260px;
+    overflow: auto;
+}
+
+.model-anomaly-item {
+    display: grid;
+    gap: 3px;
+    padding: 7px 8px;
+    border: 1px solid #e2bd82;
+    background: #fffaf0;
+    color: #4f3215;
+    font-size: 11px;
+}
+
+.model-anomaly-item > strong {
+    color: #6d3b0b;
+    font-size: 12px;
+}
+
+.model-anomaly-item ul {
+    gap: 2px;
+    padding: 0;
+}
+
+.model-anomaly-item li {
+    overflow-wrap: anywhere;
+}
+
+.model-anomaly-panel[hidden] {
+    display: none;
+}
+
 .warning-panel {
     margin: 14px 8px 8px;
     border: 1px solid #d49b4d;

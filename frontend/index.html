@@ -66,6 +66,10 @@
                         <li><span>3.</span><strong>-</strong></li><li><span>4.</span><strong>-</strong></li>
                         <li><span>5.</span><strong>-</strong></li>
                     </ol>
+                    <section id="modelAnomalyPanel" class="model-anomaly-panel" aria-live="polite" hidden>
+                        <h2>モデル異常検知</h2>
+                        <ul id="modelAnomalyList" class="model-anomaly-list"></ul>
+                    </section>
                 </aside>
             </div>
         </main>
@@ -171,6 +175,6 @@
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
-    <script src="app.js?v=20261001-sort-animation2"></script>
+    <script src="app.js?v=20261001-model-anomaly-panel"></script>
 </body>
 </html>

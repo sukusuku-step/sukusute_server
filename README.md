@@ -19,7 +19,7 @@ uv run python -m sukusute_server
 
 ### 名札デバイスのシミュレーション
 
-サーバー起動中に別のターミナルから実行すると、ローマ字のランダムな名前の名札を30台分作成し、実機と同じCSV・端末状態形式で10秒ごとに `http://localhost:8000` へ送信します。M5実機と同じく、児童名検索は `/api/children/search`、端末状態は `/api/device_status`、センサーCSVは `/api/push_csv/{child_id}` を使います。CSVには100ms間隔の歩数・9軸センサー値・周囲の名札との距離を含みます。
+サーバー起動中に別のターミナルから実行すると、ローマ字のランダムな名前の名札を30台分作成し、実機と同じCSV・端末状態形式で10秒ごとに `http://localhost:8000` へ送信します。起動時は全ての端末から担当する距離ペアのデータを6000サンプル（10分相当）ずつ順番に送信し、全ペアの関係推論結果を生成します。その後、各端末が通常の周期で100ms間隔の歩数・9軸センサー値・距離データを送信します。初回投入ではペアごとに最大6000件の距離データがDBに追加されます。M5実機と同じく、児童名検索は `/api/children/search`、端末状態は `/api/device_status`、センサーCSVは `/api/push_csv/{child_id}` を使います。
 
 ```sh
 uv run python db_utils/simulate_nametags.py
