@@ -43,7 +43,10 @@
                         <span class="sr-only">クラスを選択</span>
                         <select id="classSelector"><option value="">全員のようす</option></select><span class="select-arrow">▶</span>
                     </label>
-                    <button id="openClassButton" class="class-manage-button" type="button">クラスを追加・変更</button>
+                    <div id="displayModeToggleButton" class="display-mode-switch" role="group" aria-label="UIを変更">
+                        <button type="button" data-display-mode="horizontal">横型</button>
+                        <button type="button" data-display-mode="square">四角</button>
+                    </div>
                 </div>
                 <input id="dateSelector" class="date-selector" type="date" aria-label="日付">
                 <button id="signageToggleButton" class="class-manage-button" type="button" aria-pressed="false">サイネージ表示</button>
@@ -88,20 +91,20 @@
             <strong id="menuUsername">-</strong>
         </div>
 
-        <button data-action="display-settings" type="button" aria-expanded="false">UI変更</button>
+        <button data-action="display-settings" data-menu-tone="lavender" type="button" aria-expanded="false">🖥️ UI変更</button>
         <div id="displayModeMenu" class="menu-submenu is-hidden">
             <div class="menu-section-label">モード選択</div>
-            <button data-action="display-horizontal" type="button" aria-pressed="true">横型表示</button>
-            <button data-action="display-square" type="button" aria-pressed="false">四角表示</button>
+            <button data-action="display-horizontal" data-menu-tone="blue" type="button" aria-pressed="true">↔️ 横型表示</button>
+            <button data-action="display-square" data-menu-tone="pink" type="button" aria-pressed="false">🔲 四角表示</button>
         </div>
 
-        <button data-action="related-network">関係ネットワーク図を見る</button>
-        <button data-action="relation">相関関係を一覧で見る</button>
-        <button data-action="class">所属クラスの管理</button>
-        <button data-action="student-manage">子どもの管理</button>
-        <button data-action="refresh">ステータスの更新 ↻</button>
-        <button data-action="account-delete">アカウントを削除 ⌫</button>
-        <button data-action="logout">ログアウト ⇥</button>
+        <button data-action="related-network" data-menu-tone="blue">🕸️ 関係ネットワーク図を見る</button>
+        <button data-action="relation" data-menu-tone="green">📊 相関関係を一覧で見る</button>
+        <button data-action="class" data-menu-tone="yellow">🏫 所属クラスの管理</button>
+        <button data-action="student-manage" data-menu-tone="pink">👧 子どもの管理</button>
+        <button data-action="refresh" data-menu-tone="mint">🔄 ステータスの更新</button>
+        <button data-action="account-delete" data-menu-tone="peach">🗑️ アカウントを削除</button>
+        <button data-action="logout" data-menu-tone="rose">🚪 ログアウト</button>
     </aside>
     <!-- クラス管理・関係図・アカウント削除で共有するモーダル領域 -->
     <div id="modalLayer" class="modal-layer is-hidden">
@@ -186,6 +189,6 @@
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
-    <script src="app.js?v=20261001-display-mode-fix2"></script>
+    <script src="app.js?v=20261001-display-switch-fix1"></script>
 </body>
 </html>

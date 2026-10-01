@@ -157,6 +157,51 @@ body {
     background: #f5eaf3;
 }
 
+.display-mode-switch {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    width: 116px;
+    min-height: 31px;
+    padding: 3px;
+    border: 1px solid #b99eae;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, .72);
+    isolation: isolate;
+}
+
+.display-mode-switch::before {
+    position: absolute;
+    z-index: -1;
+    top: 3px;
+    left: 3px;
+    width: calc(50% - 3px);
+    height: calc(100% - 6px);
+    border-radius: 4px;
+    background: var(--line);
+    content: "";
+    transition: transform .2s ease;
+}
+
+.display-mode-switch.is-square::before {
+    transform: translateX(100%);
+}
+
+.display-mode-switch button {
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.display-mode-switch button[aria-pressed="true"] {
+    color: #fff;
+}
+
 .class-summary {
     display: flex;
     flex-wrap: wrap;
@@ -443,7 +488,11 @@ body.square-mode .nearest-person {
     font-size: 13px;
     font-weight: 700;
     text-align: left;
+    white-space: nowrap;
 }
+
+.menu-submenu > button[data-menu-tone="blue"] { background: #edf4fc; }
+.menu-submenu > button[data-menu-tone="pink"] { background: #fcedf4; }
 
 .menu-submenu > button:hover {
     border-color: rgba(144, 128, 214, .5);
@@ -875,7 +924,7 @@ body.square-mode .nearest-person {
     position: fixed;
     z-index: 20;
     inset: 0 auto 0 0;
-    width: 222px;
+    width: 280px;
     padding: 42px 11px 20px;
     border-right: 1px solid rgba(90, 62, 88, .18);
     background: rgba(255, 249, 251, .97);
@@ -903,7 +952,17 @@ body.square-mode .nearest-person {
     font-size: 14px;
     font-weight: 700;
     text-align: left;
+    white-space: nowrap;
 }
+
+.menu-panel > button[data-menu-tone="lavender"] { background: #f1edfb; }
+.menu-panel > button[data-menu-tone="blue"] { background: #edf4fc; }
+.menu-panel > button[data-menu-tone="green"] { background: #edf8f1; }
+.menu-panel > button[data-menu-tone="yellow"] { background: #fff8df; }
+.menu-panel > button[data-menu-tone="pink"] { background: #fcedf4; }
+.menu-panel > button[data-menu-tone="mint"] { background: #eaf8f7; }
+.menu-panel > button[data-menu-tone="peach"] { background: #fff0e6; }
+.menu-panel > button[data-menu-tone="rose"] { background: #fbecef; }
 
 .menu-panel > button:not(.close-menu) + button:not(.close-menu) {
     margin-top: 5px;
@@ -912,6 +971,10 @@ body.square-mode .nearest-person {
 .menu-panel > button:not(.close-menu):hover {
     border-color: rgba(144, 128, 214, .5);
     background: #f2eefb;
+}
+
+.menu-panel > button[data-menu-tone]:hover {
+    filter: brightness(.97) saturate(1.08);
 }
 
 .close-menu {

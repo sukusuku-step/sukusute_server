@@ -38,6 +38,13 @@ function setDisplayMode(mode) {
     const isSquare = mode === 'square';
     document.body.classList.toggle('square-mode', isSquare);
     localStorage.setItem(DISPLAY_MODE_KEY, isSquare ? 'square' : 'horizontal');
+    const toggleButton = document.getElementById('displayModeToggleButton');
+    toggleButton?.classList.toggle('is-square', isSquare);
+    toggleButton?.setAttribute('aria-label', `UIを変更（現在：${isSquare ? '四角表示' : '横型表示'}）`);
+    toggleButton?.setAttribute('title', `現在：${isSquare ? '四角表示' : '横型表示'}`);
+    toggleButton?.querySelectorAll('[data-display-mode]').forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.displayMode === (isSquare ? 'square' : 'horizontal')));
+    });
     document.querySelector('[data-action="display-horizontal"]')?.setAttribute('aria-pressed', String(!isSquare));
     document.querySelector('[data-action="display-square"]')?.setAttribute('aria-pressed', String(isSquare));
 }
@@ -1218,7 +1225,9 @@ document.addEventListener('keydown', (event) => {
     }
 });
 window.addEventListener('resize', ensureSignageAutoScroll);
-document.getElementById('openClassButton').addEventListener('click', () => { openClassModal(); });
+document.querySelectorAll('[data-display-mode]').forEach((button) => button.addEventListener('click', () => {
+    setDisplayMode(button.dataset.displayMode);
+}));
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-action="display-settings"]').addEventListener('click', (event) => {
     const submenu = document.getElementById('displayModeMenu');
