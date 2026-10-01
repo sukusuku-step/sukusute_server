@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 import requests
 
 
+MAX_SIMULATED_DEVICES = 30
 FAMILY_NAMES = [
     "Sato", "Suzuki", "Takahashi", "Tanaka", "Ito", "Watanabe", "Yamamoto", "Nakamura", "Kobayashi", "Kato",
     "Yoshida", "Yamada", "Sasaki", "Yamaguchi", "Matsumoto", "Inoue", "Kimura", "Hayashi", "Shimizu", "Saito",
@@ -44,6 +45,7 @@ class SimulatedNametag:
     samples_sent: int = 0
     battery: int = 0
     peers: list[SimulatedNametag] = field(default_factory=list)
+    low_activity: bool = False
 
 
 def request_json(method: str, url: str, **kwargs) -> dict:
@@ -102,7 +104,10 @@ def distance_to_rssi(distance_m: float) -> int:
 
 
 def create_devices(
-    enrolled: list[tuple[str, int]], rng: random.Random, initial_samples: int = 100
+    enrolled: list[tuple[str, int]],
+    rng: random.Random,
+    initial_samples: int = 100,
+    low_activity_count: int = 0,
 ) -> list[SimulatedNametag]:
     started_at = dt.datetime.now() - dt.timedelta(seconds=(initial_samples - 1) / 10.0)
     devices = [
@@ -115,6 +120,7 @@ def create_devices(
             x=rng.uniform(0, 10),
             y=rng.uniform(0, 10),
             battery=rng.randint(65, 100),
+            low_activity=slot <= low_activity_count,
         )
         for slot, (name, child_id) in enumerate(enrolled, start=1)
     ]
@@ -137,15 +143,19 @@ def make_csv_batch(
     for row_index in range(samples):
         sample_index = device.samples_sent + row_index
         phase = sample_index * math.tau / 7.0
-        if advance_steps and device.rng.random() < 0.14:
+        low_activity_now = device.low_activity and advance_steps
+        if advance_steps and not device.low_activity and device.rng.random() < 0.14:
             device.steps += 1
 
-        ax = 0.08 * math.sin(phase) + device.rng.gauss(0, 0.025)
-        ay = 0.06 * math.cos(phase) + device.rng.gauss(0, 0.025)
-        az = 1.0 + 0.18 * math.sin(phase) + device.rng.gauss(0, 0.025)
-        gx = 8.0 * math.cos(phase) + device.rng.gauss(0, 2.0)
-        gy = 5.0 * math.sin(phase) + device.rng.gauss(0, 2.0)
-        gz = device.rng.gauss(0, 2.0)
+        motion_scale = 0.08 if low_activity_now else 1.0
+        noise_scale = 0.01 if low_activity_now else 0.025
+        gyro_scale = 0.2 if low_activity_now else 2.0
+        ax = 0.08 * motion_scale * math.sin(phase) + device.rng.gauss(0, noise_scale)
+        ay = 0.06 * motion_scale * math.cos(phase) + device.rng.gauss(0, noise_scale)
+        az = 1.0 + 0.18 * motion_scale * math.sin(phase) + device.rng.gauss(0, noise_scale)
+        gx = 8.0 * motion_scale * math.cos(phase) + device.rng.gauss(0, gyro_scale)
+        gy = 5.0 * motion_scale * math.sin(phase) + device.rng.gauss(0, gyro_scale)
+        gz = device.rng.gauss(0, gyro_scale)
         mx = 25.0 + device.rng.gauss(0, 1.5)
         my = 5.0 + device.rng.gauss(0, 1.5)
         mz = 40.0 + device.rng.gauss(0, 1.5)
@@ -198,13 +208,20 @@ def send_device_batch(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="M5 nametag 30台シミュレーター")
+    parser = argparse.ArgumentParser(description="M5 nametag 1〜30台シミュレーター")
     parser.add_argument(
         "--base-url",
         default="http://localhost:8000",
         help="APIのベースURL（M5実機の各APIパスを付加。既定: localhost:8000）",
     )
-    parser.add_argument("--count", type=int, default=30, help="シミュレーション台数")
+    parser.add_argument(
+        "--count", type=int, default=MAX_SIMULATED_DEVICES,
+        help=f"シミュレーション台数（1〜{MAX_SIMULATED_DEVICES}、既定: {MAX_SIMULATED_DEVICES}）",
+    )
+    parser.add_argument(
+        "--low-activity-count", type=int, default=3,
+        help="低活動として歩数とセンサー変動を抑える台数（既定: 3）",
+    )
     parser.add_argument("--interval", type=float, default=10.0, help="送信周期（秒）")
     parser.add_argument("--samples", type=int, default=100, help="1回あたりのCSVサンプル数（実機は100）")
     parser.add_argument("--warmup-samples", type=int, default=6000, help="初回にまとめて送る10Hzサンプル数（推論には6000以上必要）")
@@ -212,8 +229,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cycles", type=int, default=0, help="送信回数。0ならCtrl+Cまで継続")
     parser.add_argument("--seed", type=int, help="乱数シード（名前・センサー値を再現）")
     args = parser.parse_args()
-    if args.count < 1 or args.interval <= 0 or args.samples < 1 or args.warmup_samples < 6000 or args.workers < 1 or args.cycles < 0:
-        parser.error("count/samples/workersは1以上、warmup-samplesは6000以上、intervalは0より大きく、cyclesは0以上にしてください")
+    if not 1 <= args.count <= MAX_SIMULATED_DEVICES:
+        parser.error(f"countは1〜{MAX_SIMULATED_DEVICES}の範囲で指定してください")
+    if not 0 <= args.low_activity_count <= args.count:
+        parser.error("low-activity-countは0以上count以下で指定してください")
+    if args.interval <= 0 or args.samples < 1 or args.warmup_samples < 6000 or args.workers < 1 or args.cycles < 0:
+        parser.error("samples/workersは1以上、warmup-samplesは6000以上、intervalは0より大きく、cyclesは0以上にしてください")
     return args
 
 
@@ -231,12 +252,15 @@ def main() -> int:
         print(f"サーバー接続または児童登録に失敗しました: {error}", file=sys.stderr)
         return 1
 
-    devices = create_devices(enrolled, rng, args.warmup_samples)
+    devices = create_devices(
+        enrolled, rng, args.warmup_samples, args.low_activity_count
+    )
     print(f"{base_url} に接続しました。{len(devices)}台の名札をシミュレーションします。")
     print("CSV: 実機と同じ10Hzサンプル、加速度/ジャイロ/地磁気9軸、BLE距離列")
     print("端末状態: battery と wifi_rssi を送信。Ctrl+Cで停止します。")
     for device in devices:
-        print(f"  {device.child_id:>3}: {device.name}")
+        activity_label = " [低活動]" if device.low_activity else ""
+        print(f"  {device.child_id:>3}: {device.name}{activity_label}")
 
     total_pairs = len(devices) * (len(devices) - 1) // 2
     print(f"初回ウォームアップ: 全{total_pairs}ペア分の距離データを{args.warmup_samples}件ずつ順番に送信します...")
@@ -264,7 +288,13 @@ def main() -> int:
                 cycle += 1
                 cycle_started = time.monotonic()
                 futures = {
-                    executor.submit(send_device_batch, base_url, device, args.samples): device
+                    executor.submit(
+                        send_device_batch,
+                        base_url,
+                        device,
+                        args.samples,
+                        not device.low_activity,
+                    ): device
                     for device in devices
                 }
                 successes = 0

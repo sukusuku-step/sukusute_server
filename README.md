@@ -19,7 +19,7 @@ uv run python -m sukusute_server
 
 ### 名札デバイスのシミュレーション
 
-サーバー起動中に別のターミナルから実行すると、ローマ字のランダムな名前の名札を30台分作成し、実機と同じCSV・端末状態形式で10秒ごとに `http://localhost:8000` へ送信します。起動時は全ての端末から担当する距離ペアのデータを6000サンプル（10分相当）ずつ順番に送信し、全ペアの関係推論結果を生成します。その後、各端末が通常の周期で100ms間隔の歩数・9軸センサー値・距離データを送信します。初回投入ではペアごとに最大6000件の距離データがDBに追加されます。M5実機と同じく、児童名検索は `/api/children/search`、端末状態は `/api/device_status`、センサーCSVは `/api/push_csv/{child_id}` を使います。
+サーバー起動中に別のターミナルから実行すると、ローマ字のランダムな名前の名札を指定台数分（1〜30台、既定30台）作成し、実機と同じCSV・端末状態形式で10秒ごとに `http://localhost:8000` へ送信します。既定では先頭3台を低活動にし、ウォームアップ後の歩数を30歩のまま保ち、加速度・ジャイロの変動も小さくします。起動時は全ての端末から担当する距離ペアのデータを6000サンプル（10分相当）ずつ順番に送信し、全ペアの関係推論結果を生成します。その後、各端末が通常の周期で100ms間隔の歩数・9軸センサー値・距離データを送信します。初回投入ではペアごとに最大6000件の距離データがDBに追加されます。M5実機と同じく、児童名検索は `/api/children/search`、端末状態は `/api/device_status`、センサーCSVは `/api/push_csv/{child_id}` を使います。
 
 ```sh
 uv run python db_utils/simulate_nametags.py
@@ -29,10 +29,13 @@ uv run python db_utils/simulate_nametags.py
 
 ```sh
 uv run python db_utils/simulate_nametags.py --cycles 1
+uv run python db_utils/simulate_nametags.py --count 10
+uv run python db_utils/simulate_nametags.py --count 10 --low-activity-count 2
+uv run python db_utils/simulate_nametags.py --count 10 --low-activity-count 0
 uv run python db_utils/simulate_nametags.py --count 30 --interval 10
 ```
 
-作成した児童と送信データはDBに残ります。名札名は `Sim00-MatsumotoMisaki` 形式で、再実行時は `Sim番号-` の児童を再利用します。停止は `Ctrl+C` です。
+モデル異常を表示するには、子どもごとの24時間分のベースライン履歴が必要です。新規に作った低活動個体では、履歴がたまるまで歩数異常がすぐに表示されない場合があります。作成した児童と送信データはDBに残ります。名札名は `Sim00-MatsumotoMisaki` 形式で、再実行時は `Sim番号-` の児童を再利用します。停止は `Ctrl+C` です。
 
 ### VPSでの起動
 
