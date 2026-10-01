@@ -440,6 +440,7 @@ function renderStudents() {
                 <section class="ml-summary" aria-label="推論結果"></section>`;
         }
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
+        card.classList.toggle('has-model-warning', state.mlAnomalies[child.child_id]?.warning === true);
         card.querySelector('.student-name').innerHTML = nameHtml;
         const nearestName = state.nearestNames[child.child_id];
         let nearestPerson = card.querySelector('.nearest-person');
@@ -706,11 +707,12 @@ function renderModelAnomalyWarnings() {
             );
         if (!reasons.length) return [];
         return [`<li class="model-anomaly-item">
-            <strong>${escapeHtml(child.name || `子ども${child.child_id}`)}</strong>
+            <button class="model-anomaly-child-link" type="button" data-anomaly-child="${child.child_id}">${escapeHtml(child.name || `子ども${child.child_id}`)}</button>
             <ul>${reasons.join('')}</ul>
         </li>`];
     });
     list.innerHTML = items.join('');
+    document.getElementById('modelAnomalyCount').textContent = `${items.length}人に異常を検知`;
     panel.hidden = items.length === 0;
 }
 
@@ -1173,6 +1175,10 @@ document.getElementById('signageToggleButton').addEventListener('click', () => {
     setSignageMode(!document.body.classList.contains('signage-mode'));
 });
 document.getElementById('signageExitButton').addEventListener('click', () => setSignageMode(false));
+document.getElementById('modelAnomalyList').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-anomaly-child]');
+    if (button) openStudentDetailModal(Number(button.dataset.anomalyChild));
+});
 document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement && document.body.classList.contains('signage-mode')) {
         setSignageMode(false, false);

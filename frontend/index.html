@@ -53,6 +53,14 @@
             <div id="refreshMessage" class="refresh-message" role="status"></div>
             <div class="dashboard-layout">
                 <section class="students-panel" aria-label="子どもの状態・推論結果一覧">
+                    <section id="modelAnomalyPanel" class="model-anomaly-panel" aria-live="polite" hidden>
+                        <div class="model-anomaly-heading">
+                            <span class="model-anomaly-mark" aria-hidden="true">!</span>
+                            <h2>モデル異常検知</h2>
+                            <span id="modelAnomalyCount" class="model-anomaly-count"></span>
+                        </div>
+                        <ul id="modelAnomalyList" class="model-anomaly-list"></ul>
+                    </section>
                     <div class="student-panel-heading">
                         <h2>子どもごとのステータス</h2>
                         <p>最新の姿勢・走行・活動量と、子ども同士の距離・関連度を表示します。</p>
@@ -66,10 +74,6 @@
                         <li><span>3.</span><strong>-</strong></li><li><span>4.</span><strong>-</strong></li>
                         <li><span>5.</span><strong>-</strong></li>
                     </ol>
-                    <section id="modelAnomalyPanel" class="model-anomaly-panel" aria-live="polite" hidden>
-                        <h2>モデル異常検知</h2>
-                        <ul id="modelAnomalyList" class="model-anomaly-list"></ul>
-                    </section>
                 </aside>
             </div>
         </main>
@@ -175,6 +179,6 @@
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
-    <script src="app.js?v=20261001-model-anomaly-panel"></script>
+    <script src="app.js?v=20261001-anomaly-banner"></script>
 </body>
 </html>
