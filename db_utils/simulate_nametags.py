@@ -21,6 +21,7 @@ MAX_SIMULATED_DEVICES = 30
 SAMPLES_PER_MINUTE = 10 * 60
 NORMAL_STEPS_PER_MINUTE = 49
 LOW_ACTIVITY_STEPS_PER_MINUTE = 1
+LOW_ACTIVITY_BASELINE_MINUTES = 10
 FAMILY_NAMES = [
     "Sato", "Suzuki", "Takahashi", "Tanaka", "Ito", "Watanabe", "Yamamoto", "Nakamura", "Kobayashi", "Kato",
     "Yoshida", "Yamada", "Sasaki", "Yamaguchi", "Matsumoto", "Inoue", "Kimura", "Hayashi", "Shimizu", "Saito",
@@ -109,10 +110,10 @@ def distance_to_rssi(distance_m: float) -> int:
 def create_devices(
     enrolled: list[tuple[str, int]],
     rng: random.Random,
-    initial_samples: int = 100,
     low_activity_count: int = 0,
+    started_at: dt.datetime | None = None,
 ) -> list[SimulatedNametag]:
-    started_at = dt.datetime.now() - dt.timedelta(seconds=(initial_samples - 1) / 10.0)
+    started_at = started_at or dt.datetime.now()
     devices = [
         SimulatedNametag(
             slot=slot,
@@ -128,10 +129,7 @@ def create_devices(
         for slot, (name, child_id) in enumerate(enrolled, start=1)
     ]
     for device in devices:
-        device.peers = sorted(
-            (other for other in devices if other is not device),
-            key=lambda other: math.hypot(device.x - other.x, device.y - other.y),
-        )[: min(5, len(devices) - 1)]
+        device.peers = [other for other in devices if other.child_id > device.child_id]
     return devices
 
 
@@ -146,9 +144,13 @@ def make_csv_batch(
     for row_index in range(samples):
         sample_index = device.samples_sent + row_index
         phase = sample_index * math.tau / 7.0
-        low_activity_now = device.low_activity and advance_steps
+        low_activity_now = (
+            device.low_activity
+            and advance_steps
+            and sample_index >= SAMPLES_PER_MINUTE * LOW_ACTIVITY_BASELINE_MINUTES
+        )
         steps_per_minute = (
-            LOW_ACTIVITY_STEPS_PER_MINUTE if device.low_activity
+            LOW_ACTIVITY_STEPS_PER_MINUTE if low_activity_now
             else NORMAL_STEPS_PER_MINUTE
         )
         if advance_steps and device.rng.random() < steps_per_minute / SAMPLES_PER_MINUTE:
@@ -231,7 +233,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--interval", type=float, default=10.0, help="送信周期（秒）")
     parser.add_argument("--samples", type=int, default=100, help="1回あたりのCSVサンプル数（実機は100）")
-    parser.add_argument("--warmup-samples", type=int, default=6000, help="初回にまとめて送る10Hzサンプル数（推論には6000以上必要）")
     parser.add_argument("--workers", type=int, default=6, help="同時送信スレッド数")
     parser.add_argument("--cycles", type=int, default=0, help="送信回数。0ならCtrl+Cまで継続")
     parser.add_argument("--seed", type=int, help="乱数シード（名前・センサー値を再現）")
@@ -240,13 +241,14 @@ def parse_args() -> argparse.Namespace:
         parser.error(f"countは1〜{MAX_SIMULATED_DEVICES}の範囲で指定してください")
     if not 0 <= args.low_activity_count <= args.count:
         parser.error("low-activity-countは0以上count以下で指定してください")
-    if args.interval <= 0 or args.samples < 1 or args.warmup_samples < 6000 or args.workers < 1 or args.cycles < 0:
-        parser.error("samples/workersは1以上、warmup-samplesは6000以上、intervalは0より大きく、cyclesは0以上にしてください")
+    if args.interval <= 0 or args.samples < 1 or args.workers < 1 or args.cycles < 0:
+        parser.error("samples/workersは1以上、intervalは0より大きく、cyclesは0以上にしてください")
     return args
 
 
 def main() -> int:
     args = parse_args()
+    simulation_started_at = dt.datetime.now()
     base_url = args.base_url.rstrip("/")
     rng = random.Random(args.seed)
 
@@ -260,7 +262,7 @@ def main() -> int:
         return 1
 
     devices = create_devices(
-        enrolled, rng, args.warmup_samples, args.low_activity_count
+        enrolled, rng, args.low_activity_count, simulation_started_at
     )
     print(f"{base_url} に接続しました。{len(devices)}台の名札をシミュレーションします。")
     print("CSV: 実機と同じ10Hzサンプル、加速度/ジャイロ/地磁気9軸、BLE距離列")
@@ -269,24 +271,7 @@ def main() -> int:
         activity_label = " [低活動]" if device.low_activity else ""
         print(f"  {device.child_id:>3}: {device.name}{activity_label}")
 
-    total_pairs = len(devices) * (len(devices) - 1) // 2
-    print(f"初回ウォームアップ: 全{total_pairs}ペア分の距離データを{args.warmup_samples}件ずつ順番に送信します...")
-    for device in devices:
-        nearby_peers = device.peers
-        device.peers = [other for other in devices if other.child_id > device.child_id]
-        device.started_at = dt.datetime.now() - dt.timedelta(
-            seconds=(args.warmup_samples - 1) / 10.0
-        )
-        try:
-            send_device_batch(
-                base_url, device, args.warmup_samples, advance_steps=False
-            )
-        except requests.RequestException as error:
-            print(f"初回ウォームアップの送信に失敗しました: {device.name}: {error}", file=sys.stderr)
-            return 1
-        finally:
-            device.peers = nearby_peers
-    print("関係推論用の初期データを送信しました。通常送信を開始します。")
+    print("各端末が通常周期で、担当する全ペアの距離列を含むCSVを個別送信します。関係推論には約10分の蓄積が必要です。")
 
     cycle = 0
     try:
@@ -295,13 +280,7 @@ def main() -> int:
                 cycle += 1
                 cycle_started = time.monotonic()
                 futures = {
-                    executor.submit(
-                        send_device_batch,
-                        base_url,
-                        device,
-                        args.samples,
-                        not device.low_activity,
-                    ): device
+                    executor.submit(send_device_batch, base_url, device, args.samples): device
                     for device in devices
                 }
                 successes = 0
