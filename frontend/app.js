@@ -18,7 +18,9 @@ const state = {
     // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
     teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
 };
+
 const DISPLAY_MODE_KEY = 'sukusuteDisplayMode';
+
 // 画面表示に使う歩数ルール。カードと警告で同じ基準を使う。
 const DEVICE_STATUS_STALE_MS = 60_000;
 const ML_REFRESH_INTERVAL_MS = 30_000;
@@ -53,6 +55,7 @@ setDisplayMode(localStorage.getItem(DISPLAY_MODE_KEY) || 'horizontal');
 
 let refreshTimer = null;
 let refreshInProgress = false;
+
 // 児童ごとのスロット風アニメーションの進行状況（連続更新時に前回分を打ち切るために使う）。
 const stepAnimationState = new Map();
 let signageScrollInterval = 0;
@@ -296,6 +299,24 @@ function closeMenu() {
 
     menuPanel.classList.remove('is-open');
     menuPanel.setAttribute('aria-hidden', 'true');
+}
+
+async function openConfigModal() {
+    setMessage('configMessage', '');
+
+    const config = await apiRequest('/api/ml/config');
+
+    document.getElementById('configAnomalyThreshold').value = config.anomaly_threshold_percent;
+
+    const totalMinutes = Number(config.baseline_min_data_minutes) || 0;
+
+    document.getElementById('configBaselineMinHours').value = Math.floor(totalMinutes / 60);
+    document.getElementById('configBaselineMinMinutes').value = totalMinutes % 60;
+    document.getElementById('configBaselineMaxDays').value = config.baseline_max_days;
+    document.getElementById('configRelatednessMaxHistory').value = config.relatedness_max_history;
+    document.getElementById('menuPanel').classList.remove('is-open');
+    document.getElementById('modalLayer').classList.remove('is-hidden');
+    document.getElementById('configModal').classList.remove('is-hidden');
 }
 
 // ログイン画面を表示し、認証が必要な画面を隠す。
@@ -1261,12 +1282,26 @@ document.querySelector('[data-action="class"]').addEventListener('click', () => 
 document.querySelector('[data-action="student-manage"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openStudentManageModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
 document.querySelector('[data-action="related-network"]').addEventListener('click', () => { closeMenu(); openRelatedNetworkModal(); });
+
 document.querySelector('[data-action="refresh"]').addEventListener('click', () => {
     document.getElementById('menuPanel').classList.remove('is-open');
     console.info('[ui] manual refresh clicked');
     loadDashboard();
 });
+
 document.querySelector('[data-action="account-delete"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openAccountDeleteModal(); });
+
+document.querySelector('[data-action="config"]').addEventListener(
+    'click',
+    async () => {
+        try {
+            await openConfigModal();
+        } catch (error) {
+            console.error(error);
+            alert(`コンフィグの取得に失敗しました: ${error.message}`);
+        }
+    }
+);
 
 document.querySelector('[data-action="logout"]').addEventListener('click', async () => {
     try {
@@ -1335,6 +1370,72 @@ document.getElementById('classList').addEventListener('click', async (event) => 
         await loadClasses();
     } catch (error) { alert(error.message); }
 });
+document.getElementById('configForm').addEventListener(
+    'submit',
+    async (event) => {
+        event.preventDefault();
+
+        setMessage('configMessage', '');
+
+        const hours = Number(
+            document.getElementById('configBaselineMinHours').value
+        );
+
+        const minutes = Number(
+            document.getElementById('configBaselineMinMinutes').value
+        );
+
+        const baselineMinDataMinutes =
+            hours * 60 + minutes;
+
+        const body = {
+            anomaly_threshold_percent: Number(
+                document.getElementById(
+                    'configAnomalyThreshold'
+                ).value
+            ),
+
+            baseline_min_data_minutes:
+                baselineMinDataMinutes,
+
+            baseline_max_days: Number(
+                document.getElementById(
+                    'configBaselineMaxDays'
+                ).value
+            ),
+
+            relatedness_max_history: Number(
+                document.getElementById(
+                    'configRelatednessMaxHistory'
+                ).value
+            ),
+        };
+
+        try {
+            await apiRequest(
+                '/api/ml/config',
+                {
+                    method: 'PATCH',
+                    body: JSON.stringify(body),
+                }
+            );
+
+            setMessage(
+                'configMessage',
+                '設定を保存しました。'
+            );
+
+            // ML結果の再取得を促す
+            state.mlUpdatedAt = 0;
+
+        } catch (error) {
+            setMessage(
+                'configMessage',
+                error.message
+            );
+        }
+    }
+);
 document.getElementById('studentManageList').addEventListener('change', async (event) => {
     const select = event.target.closest('[data-manage-class]');
     if (select) {
