@@ -14,7 +14,7 @@
             <p>先生用ログイン</p>
             <label>ユーザー名<input id="loginUsername" required autocomplete="username"></label>
             <label>パスワード<input id="loginPassword" type="password" required autocomplete="current-password"></label>
-            <button class="primary-button" type="submit">ログイン</button>
+            <button id="loginButton" class="primary-button" type="submit">ログイン</button>
             <button id="showRegisterButton" class="text-button" type="button">初めて利用する場合はこちら</button>
             <div id="loginMessage" class="form-message"></div>
         </form>
@@ -86,6 +86,13 @@
         <div class="menu-user">
             <span>ログイン中</span>
             <strong id="menuUsername">-</strong>
+        </div>
+
+        <button data-action="display-settings" type="button" aria-expanded="false">UI変更</button>
+        <div id="displayModeMenu" class="menu-submenu is-hidden">
+            <div class="menu-section-label">モード選択</div>
+            <button data-action="display-horizontal" type="button" aria-pressed="true">横型表示</button>
+            <button data-action="display-square" type="button" aria-pressed="false">四角表示</button>
         </div>
 
         <button data-action="related-network">関係ネットワーク図を見る</button>
@@ -179,6 +186,6 @@
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
-    <script src="app.js?v=20261001-anomaly-banner"></script>
+    <script src="app.js?v=20261001-display-mode-fix2"></script>
 </body>
 </html>

@@ -18,7 +18,7 @@ const state = {
     // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
     teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
 };
-
+const DISPLAY_MODE_KEY = 'sukusuteDisplayMode';
 // 画面表示に使う歩数ルール。カードと警告で同じ基準を使う。
 const DEVICE_STATUS_STALE_MS = 60_000;
 const ML_REFRESH_INTERVAL_MS = 30_000;
@@ -34,14 +34,24 @@ const ANOMALY_FEATURE_LABELS = {
 // APIは画面と同じFastAPIサーバーへ送る。
 const API_BASE_URL = '';
 
+function setDisplayMode(mode) {
+    const isSquare = mode === 'square';
+    document.body.classList.toggle('square-mode', isSquare);
+    localStorage.setItem(DISPLAY_MODE_KEY, isSquare ? 'square' : 'horizontal');
+    document.querySelector('[data-action="display-horizontal"]')?.setAttribute('aria-pressed', String(!isSquare));
+    document.querySelector('[data-action="display-square"]')?.setAttribute('aria-pressed', String(isSquare));
+}
+
+setDisplayMode(localStorage.getItem(DISPLAY_MODE_KEY) || 'horizontal');
+
 let refreshTimer = null;
 let refreshInProgress = false;
 // 児童ごとのスロット風アニメーションの進行状況（連続更新時に前回分を打ち切るために使う）。
 const stepAnimationState = new Map();
 let signageScrollInterval = 0;
 let signageScrollRetryTimer = 0;
-let signageScrollDirection = 1;
 let signageScrollPauseUntil = 0;
+let signageScrollDirection = 1;
 
 // 端末が先生用としてチェックされているかどうかを判定する。
 function isTeacherFlag(childId) {
@@ -439,6 +449,7 @@ function renderStudents() {
                 <div class="student-status"></div>
                 <section class="ml-summary" aria-label="推論結果"></section>`;
         }
+            card.dataset.palette = String((child.child_id - 1) % 8);
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
         card.classList.toggle('has-model-warning', state.mlAnomalies[child.child_id]?.warning === true);
         card.querySelector('.student-name').innerHTML = nameHtml;
@@ -601,21 +612,26 @@ function scrollSignagePage() {
     }
     const grid = document.getElementById('studentGrid');
     const maxScroll = grid.scrollHeight - grid.clientHeight;
-    if (maxScroll <= 1 || Date.now() < signageScrollPauseUntil) return;
-
-    const now = Date.now();
-    const pageDistance = Math.max(120, grid.clientHeight * 0.75);
-    let targetScroll = grid.scrollTop + signageScrollDirection * pageDistance;
-    if (signageScrollDirection > 0 && targetScroll >= maxScroll - 2) {
-        targetScroll = maxScroll;
-        signageScrollDirection = -1;
-        signageScrollPauseUntil = now + 2500;
-    } else if (signageScrollDirection < 0 && targetScroll <= 2) {
-        targetScroll = 0;
-        signageScrollDirection = 1;
-        signageScrollPauseUntil = now + 2500;
+    if (maxScroll <= 1) {
+        stopSignageAutoScroll();
+        signageScrollRetryTimer = setTimeout(() => {
+            signageScrollRetryTimer = 0;
+            ensureSignageAutoScroll();
+        }, 250);
+        return;
     }
-    grid.scrollTo({ top: targetScroll, behavior: 'smooth' });
+
+    if (Date.now() >= signageScrollPauseUntil) {
+        grid.scrollTop += signageScrollDirection > 0 ? 1 : -12;
+        if (signageScrollDirection > 0 && grid.scrollTop >= maxScroll - 1) {
+            grid.scrollTop = maxScroll;
+            signageScrollDirection = -1;
+        } else if (signageScrollDirection < 0 && grid.scrollTop <= 0) {
+            grid.scrollTop = 0;
+            signageScrollDirection = 1;
+            signageScrollPauseUntil = Date.now() + 1000;
+        }
+    }
 }
 
 function ensureSignageAutoScroll() {
@@ -631,7 +647,7 @@ function ensureSignageAutoScroll() {
         }, 250);
         return;
     }
-    signageScrollInterval = setInterval(scrollSignagePage, 4500);
+    signageScrollInterval = setInterval(scrollSignagePage, 50);
 }
 
 function setSignageMode(enabled, syncFullscreen = true) {
@@ -655,7 +671,9 @@ function setSignageMode(enabled, syncFullscreen = true) {
         grid.scrollTop = 0;
         signageScrollDirection = 1;
         signageScrollPauseUntil = 0;
-        ensureSignageAutoScroll();
+        setTimeout(() => {
+            if (document.body.classList.contains('signage-mode')) ensureSignageAutoScroll();
+        }, 0);
     } else {
         stopSignageAutoScroll();
     }
@@ -1120,15 +1138,23 @@ function formatDate(date) {
 
 // ===== 画面フォームとメニューのイベント処理 =====
 
-document.getElementById('loginForm').addEventListener('submit', async (event) => {
+async function submitLogin(event) {
     event.preventDefault();
+    const button = document.getElementById('loginButton');
+    if (button.disabled) return;
+    button.disabled = true;
     setMessage('loginMessage', '');
     try {
         await login(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
     } catch (error) {
         setMessage('loginMessage', error.message);
+    } finally {
+        button.disabled = false;
     }
-});
+}
+
+document.getElementById('loginForm').addEventListener('submit', submitLogin);
+document.getElementById('loginButton').addEventListener('click', submitLogin);
 
 document.getElementById('registerForm').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1194,6 +1220,19 @@ document.addEventListener('keydown', (event) => {
 window.addEventListener('resize', ensureSignageAutoScroll);
 document.getElementById('openClassButton').addEventListener('click', () => { openClassModal(); });
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
+document.querySelector('[data-action="display-settings"]').addEventListener('click', (event) => {
+    const submenu = document.getElementById('displayModeMenu');
+    const isOpen = submenu.classList.toggle('is-hidden') === false;
+    event.currentTarget.setAttribute('aria-expanded', String(isOpen));
+});
+document.querySelector('[data-action="display-horizontal"]').addEventListener('click', () => {
+    setDisplayMode('horizontal');
+    closeMenu();
+});
+document.querySelector('[data-action="display-square"]').addEventListener('click', () => {
+    setDisplayMode('square');
+    closeMenu();
+});
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
 document.querySelector('[data-action="student-manage"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openStudentManageModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
