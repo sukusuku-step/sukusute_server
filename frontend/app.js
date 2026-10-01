@@ -391,6 +391,14 @@ function renderStudents() {
         return;
     }
     grid.querySelector('.loading')?.remove();
+    const previousPositions = new Map();
+    grid.querySelectorAll('[data-student-card]').forEach((card) => {
+        card.getAnimations()
+            .filter((animation) => animation.id === 'student-reorder')
+            .forEach((animation) => animation.cancel());
+        const rect = card.getBoundingClientRect();
+        previousPositions.set(Number(card.dataset.studentCard), { left: rect.left, top: rect.top });
+    });
     const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
     const visibleIds = new Set(sorted.map((child) => child.child_id));
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
@@ -557,6 +565,22 @@ function renderStudents() {
         const referenceNode = grid.children[index];
         if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
         animateStepValue(card.querySelector('.step-number'), child.child_id, steps);
+    });
+    grid.querySelectorAll('[data-student-card]').forEach((card) => {
+        const previous = previousPositions.get(Number(card.dataset.studentCard));
+        if (!previous) return;
+        const current = card.getBoundingClientRect();
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+        const animation = card.animate([
+            { transform: `translate(${deltaX}px, ${deltaY}px)` },
+            { transform: 'translate(0, 0)' }
+        ], {
+            duration: 900,
+            easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)'
+        });
+        animation.id = 'student-reorder';
     });
     ensureSignageAutoScroll();
 }
