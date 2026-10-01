@@ -18,7 +18,7 @@ const state = {
     // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
     teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
 };
-
+const DISPLAY_MODE_KEY = 'sukusuteDisplayMode';
 // 画面表示に使う歩数ルール。カードと警告で同じ基準を使う。
 const DEVICE_STATUS_STALE_MS = 60_000;
 const ML_REFRESH_INTERVAL_MS = 30_000;
@@ -31,14 +31,34 @@ const ANOMALY_FEATURE_LABELS = {
     mag_mean: '地磁気'
 };
 
-// フロントをAPIサーバーと別ホストで配信する場合の接続先。
-// 同じFastAPIサーバーから配信する場合は '' にすると相対URLになる。
-const API_BASE_URL = 'http://49.212.151.94:3000';
+// APIは画面と同じFastAPIサーバーへ送る。
+const API_BASE_URL = '';
+
+function setDisplayMode(mode) {
+    const isSquare = mode === 'square';
+    document.body.classList.toggle('square-mode', isSquare);
+    localStorage.setItem(DISPLAY_MODE_KEY, isSquare ? 'square' : 'horizontal');
+    const toggleButton = document.getElementById('displayModeToggleButton');
+    toggleButton?.classList.toggle('is-square', isSquare);
+    toggleButton?.setAttribute('aria-label', `UIを変更（現在：${isSquare ? '四角表示' : '横型表示'}）`);
+    toggleButton?.setAttribute('title', `現在：${isSquare ? '四角表示' : '横型表示'}`);
+    toggleButton?.querySelectorAll('[data-display-mode]').forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.displayMode === (isSquare ? 'square' : 'horizontal')));
+    });
+    document.querySelector('[data-action="display-horizontal"]')?.setAttribute('aria-pressed', String(!isSquare));
+    document.querySelector('[data-action="display-square"]')?.setAttribute('aria-pressed', String(isSquare));
+}
+
+setDisplayMode(localStorage.getItem(DISPLAY_MODE_KEY) || 'horizontal');
 
 let refreshTimer = null;
 let refreshInProgress = false;
 // 児童ごとのスロット風アニメーションの進行状況（連続更新時に前回分を打ち切るために使う）。
 const stepAnimationState = new Map();
+let signageScrollInterval = 0;
+let signageScrollRetryTimer = 0;
+let signageScrollPauseUntil = 0;
+let signageScrollDirection = 1;
 
 // 端末が先生用としてチェックされているかどうかを判定する。
 function isTeacherFlag(childId) {
@@ -231,11 +251,19 @@ async function loadMlResults(force = false) {
     state.mlRelations = nextRelations;
     state.mlUpdatedAt = now;
     state.mlChildSignature = signature;
+    renderModelAnomalyWarnings();
 }
 
 // 日付をAPIのクエリパラメータ形式へ変換する。
 function dateQuery(date) {
     return `year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`;
+}
+
+function isToday(date) {
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear()
+        && date.getMonth() === now.getMonth()
+        && date.getDate() === now.getDate();
 }
 
 // ===== ログイン画面とダッシュボード初期化 =====
@@ -359,7 +387,7 @@ async function loadDashboard() {
             const studentGrid = document.getElementById('studentGrid');
 
             if (studentGrid) {
-                studentGrid.innerHTML = '<div class="loading">児童データを取得できませんでした。</div>';
+                studentGrid.innerHTML = '<div class="loading">子どものデータを取得できませんでした。</div>';
             }
         }
 
@@ -382,11 +410,21 @@ function getWifiSignalLevel(wifiRssi) {
 // 児童を歩数順に並べ、歩数カードをHTMLへ描画する。カードはDOMを使い回し、歩数だけスロット風に更新する。
 function renderStudents() {
     const grid = document.getElementById('studentGrid');
+    const isSelectedToday = isToday(state.selectedDate);
     if (!state.children.length) {
-        grid.innerHTML = '<div class="loading">このクラスに児童データがありません</div>';
+        grid.innerHTML = '<div class="loading">このクラスに子どものデータがありません</div>';
+        ensureSignageAutoScroll();
         return;
     }
     grid.querySelector('.loading')?.remove();
+    const previousPositions = new Map();
+    grid.querySelectorAll('[data-student-card]').forEach((card) => {
+        card.getAnimations()
+            .filter((animation) => animation.id === 'student-reorder')
+            .forEach((animation) => animation.cancel());
+        const rect = card.getBoundingClientRect();
+        previousPositions.set(Number(card.dataset.studentCard), { left: rect.left, top: rect.top });
+    });
     const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
     const visibleIds = new Set(sorted.map((child) => child.child_id));
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
@@ -396,7 +434,7 @@ function renderStudents() {
         const deviceStatus = state.deviceStatuses[child.child_id];
         const statusAge = deviceStatus ? Date.now() - Date.parse(deviceStatus.updated_at) : Infinity;
         const isDeviceStatusFresh = statusAge >= 0 && statusAge < DEVICE_STATUS_STALE_MS;
-        const currentDeviceStatus = isDeviceStatusFresh ? deviceStatus : null;
+        const currentDeviceStatus = isSelectedToday && isDeviceStatusFresh ? deviceStatus : null;
         const wifiSignalLevel = currentDeviceStatus ? getWifiSignalLevel(currentDeviceStatus.wifi_rssi) : 0;
         const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : ' : 接続なし';
         const wifiDescription = currentDeviceStatus
@@ -408,7 +446,7 @@ function renderStudents() {
 
         const steps = state.steps[child.child_id] || 0;
         const isTeacher = isTeacherFlag(child.child_id);
-        const nameHtml = `${escapeHtml(child.name || `児童${child.child_id}`)}
+        const nameHtml = `${escapeHtml(child.name || `子ども${child.child_id}`)}
                             ${isTeacher ? 
                                 '<span class="teacher-badge" title="先生の端末">🧑\u200d🏫 先生</span>' : ''
                             }`;
@@ -418,6 +456,7 @@ function renderStudents() {
             card = document.createElement('article');
             card.className = 'student-card';
             card.dataset.studentCard = String(child.child_id);
+            card.addEventListener('click', () => openStudentDetailModal(child.child_id));
             card.innerHTML = `
                 <div class="student-name"></div>
                 <div class="student-steps">歩数：<strong class="step-number"></strong></div>
@@ -425,7 +464,9 @@ function renderStudents() {
                 <div class="student-status"></div>
                 <section class="ml-summary" aria-label="推論結果"></section>`;
         }
+            card.dataset.palette = String((child.child_id - 1) % 8);
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
+        card.classList.toggle('has-model-warning', state.mlAnomalies[child.child_id]?.warning === true);
         card.querySelector('.student-name').innerHTML = nameHtml;
         const nearestName = state.nearestNames[child.child_id];
         let nearestPerson = card.querySelector('.nearest-person');
@@ -439,12 +480,14 @@ function renderStudents() {
         } else {
             nearestPerson?.remove();
         }
-        card.querySelector('.device-status').innerHTML = `
+        const deviceStatusElement = card.querySelector('.device-status');
+        deviceStatusElement.hidden = !isSelectedToday;
+        deviceStatusElement.innerHTML = isSelectedToday ? `
             <span>BATTERY : ${currentDeviceStatus ? `${currentDeviceStatus.battery}%` : 'データなし'}${isDeviceStatusFresh ? '' : '<span class="device-warning" role="img" aria-label="端末データが1分以上更新されていません" title="端末データが1分以上更新されていません">!</span>'}</span>
             <span class="wifi-status" role="img" aria-label="${wifiDescription}" title="${wifiDescription}">
                 <span class="wifi-signal" aria-hidden="true">${wifiBars}</span>
                 <span>Wi-Fi ${wifiRssiLabel}</span>
-            </span>`;
+            </span>` : '';
         card.querySelector('.student-status').className = 'student-status';
         card.querySelector('.student-status').innerHTML = '';
 
@@ -479,7 +522,7 @@ function renderStudents() {
                 const relation = state.mlRelations[relationKey(child.child_id, other.child_id)];
                 return `
                     <div class="relation-score-row">
-                        <strong>${escapeHtml(other.name || `児童${other.child_id}`)}</strong>
+                        <strong>${escapeHtml(other.name || `子ども${other.child_id}`)}</strong>
                         <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                         <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                         <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
@@ -509,13 +552,13 @@ function renderStudents() {
                     </div>` : '<p class="ml-empty">計測したデータがまだありません</p>'}
             </div>
             <details class="relation-details" ${state.mlDetailOpenStates[child.child_id]?.relation ? 'open' : ''}>
-                <summary>他児童との距離状態・関連度スコア</summary>
+                <summary>ほかの子どもとの距離状態・関連度スコア</summary>
                 <div class="relation-score-list">
-                    ${relationRows || '<p class="ml-empty">比較対象の児童がいません</p>'}
+                    ${relationRows || '<p class="ml-empty">比較できる子どもはいません</p>'}
                 </div>
             </details>
             <details class="baseline-details" ${state.mlDetailOpenStates[child.child_id]?.baseline ? 'open' : ''}>
-                <summary>この児童の普段のステータス（ベースライン）</summary>
+                <summary>この子の普段のステータス（基準値）</summary>
                 ${behavior ? `
                     <div class="baseline-grid">
                         <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / ばらつき ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
@@ -553,6 +596,123 @@ function renderStudents() {
         if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
         animateStepValue(card.querySelector('.step-number'), child.child_id, steps);
     });
+    grid.querySelectorAll('[data-student-card]').forEach((card) => {
+        const previous = previousPositions.get(Number(card.dataset.studentCard));
+        if (!previous) return;
+        const current = card.getBoundingClientRect();
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+        const animation = card.animate([
+            { transform: `translate(${deltaX}px, ${deltaY}px)` },
+            { transform: 'translate(0, 0)' }
+        ], {
+            duration: 900,
+            easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)'
+        });
+        animation.id = 'student-reorder';
+    });
+    ensureSignageAutoScroll();
+}
+
+function stopSignageAutoScroll() {
+    if (signageScrollInterval) clearInterval(signageScrollInterval);
+    if (signageScrollRetryTimer) clearTimeout(signageScrollRetryTimer);
+    signageScrollInterval = 0;
+    signageScrollRetryTimer = 0;
+}
+
+function scrollSignagePage() {
+    if (!document.body.classList.contains('signage-mode')) {
+        stopSignageAutoScroll();
+        return;
+    }
+    const grid = document.getElementById('studentGrid');
+    const maxScroll = grid.scrollHeight - grid.clientHeight;
+    if (maxScroll <= 1) {
+        stopSignageAutoScroll();
+        signageScrollRetryTimer = setTimeout(() => {
+            signageScrollRetryTimer = 0;
+            ensureSignageAutoScroll();
+        }, 250);
+        return;
+    }
+
+    if (Date.now() >= signageScrollPauseUntil) {
+        grid.scrollTop += signageScrollDirection > 0 ? 1 : -12;
+        if (signageScrollDirection > 0 && grid.scrollTop >= maxScroll - 1) {
+            grid.scrollTop = maxScroll;
+            signageScrollDirection = -1;
+        } else if (signageScrollDirection < 0 && grid.scrollTop <= 0) {
+            grid.scrollTop = 0;
+            signageScrollDirection = 1;
+            signageScrollPauseUntil = Date.now() + 1000;
+        }
+    }
+}
+
+function ensureSignageAutoScroll() {
+    if (!document.body.classList.contains('signage-mode') || signageScrollInterval) return;
+    if (signageScrollRetryTimer) clearTimeout(signageScrollRetryTimer);
+    signageScrollRetryTimer = 0;
+
+    const grid = document.getElementById('studentGrid');
+    if (grid.scrollHeight - grid.clientHeight <= 1) {
+        signageScrollRetryTimer = setTimeout(() => {
+            signageScrollRetryTimer = 0;
+            ensureSignageAutoScroll();
+        }, 250);
+        return;
+    }
+    signageScrollInterval = setInterval(scrollSignagePage, 50);
+}
+
+function setSignageMode(enabled, syncFullscreen = true) {
+    document.body.classList.toggle('signage-mode', enabled);
+    document.getElementById('signageToggleButton').setAttribute('aria-pressed', String(enabled));
+    document.getElementById('signageToggleButton').textContent =
+        enabled ? '通常表示に戻す' : 'サイネージ表示';
+    document.getElementById('signageExitButton').hidden = !enabled;
+
+    if (syncFullscreen && enabled && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch((error) => {
+            console.info('[ui] fullscreen unavailable; using signage view', error);
+        });
+    } else if (syncFullscreen && !enabled && document.fullscreenElement) {
+        document.exitFullscreen?.().catch((error) => {
+            console.info('[ui] could not exit fullscreen', error);
+        });
+    }
+    if (enabled) {
+        const grid = document.getElementById('studentGrid');
+        grid.scrollTop = 0;
+        signageScrollDirection = 1;
+        signageScrollPauseUntil = 0;
+        setTimeout(() => {
+            if (document.body.classList.contains('signage-mode')) ensureSignageAutoScroll();
+        }, 0);
+    } else {
+        stopSignageAutoScroll();
+    }
+}
+
+function openStudentDetailModal(childId) {
+    const child = state.children.find((item) => item.child_id === childId);
+    const card = document.querySelector(`[data-student-card="${childId}"]`);
+    if (!child || !card) return;
+
+    document.getElementById('studentDetailTitle').textContent =
+        `${child.name || `子ども${childId}`}の詳細`;
+    document.getElementById('studentDetailContent').innerHTML = `
+        <div class="student-detail-summary">
+            <strong>${escapeHtml(child.name || `子ども${childId}`)}</strong>
+            <span>${escapeHtml(state.nearestNames[childId] ? `最も近くにいる人：${state.nearestNames[childId]}` : '近くにいる人：データなし')}</span>
+            <span>歩数：${(state.steps[childId] || 0).toLocaleString()}</span>
+        </div>
+        ${card.querySelector('.device-status')?.outerHTML || ''}
+        ${card.querySelector('.student-status')?.outerHTML || ''}
+        ${card.querySelector('.ml-summary')?.outerHTML || ''}`;
+    openModal('studentDetailModal');
 }
 
 // 現在表示中の児童から直近1分の歩数増加上位5名を描画する。
@@ -564,14 +724,42 @@ function renderRanking() {
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
         const entry = ranking[index];
         item.innerHTML = entry
-            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `児童${entry.child_id}`)}</strong>`
+            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `子ども${entry.child_id}`)}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
+}
+
+function renderModelAnomalyWarnings() {
+    const panel = document.getElementById('modelAnomalyPanel');
+    const list = document.getElementById('modelAnomalyList');
+    const items = state.children.flatMap((child) => {
+        const anomaly = state.mlAnomalies[child.child_id];
+        if (anomaly?.warning !== true) return [];
+        const reasons = Object.entries(anomaly.comparisons || {})
+            .filter(([, comparison]) => comparison.warning === true)
+            .map(([feature, comparison]) =>
+                `<li>${escapeHtml(formatAnomalyChange(feature, comparison))}</li>`
+            );
+        if (!reasons.length) return [];
+        return [`<li class="model-anomaly-item">
+            <button class="model-anomaly-child-link" type="button" data-anomaly-child="${child.child_id}">${escapeHtml(child.name || `子ども${child.child_id}`)}</button>
+            <ul>${reasons.join('')}</ul>
+        </li>`];
+    });
+    list.innerHTML = items.length
+        ? items.join('')
+        : '<li class="model-anomaly-clear">現在、警告はありません。</li>';
+    document.getElementById('modelAnomalyCount').textContent = items.length
+        ? `${items.length}人に異常を検知`
+        : '警告なし';
+    panel.hidden = false;
+    panel.classList.toggle('is-clear', items.length === 0);
 }
 
 // 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。
 function renderWarnings(warnings) {
     const warningList = document.getElementById('warningList');
+    if (!warningList) return;
     const visibleChildIds = new Set(state.children.map((child) => child.child_id));
     const latestWarnings = new Map();
     for (const warning of warnings) {
@@ -605,19 +793,15 @@ async function openClassModal() {
     }
 }
 
-// クラス一覧と児童の所属クラス選択肢をモーダルへ描画する。
+// クラス一覧を管理モーダルへ描画する。
 async function refreshClassList() {
     const result = await apiRequest('/api/classes');
     document.getElementById('classList').innerHTML = (result.classes || []).map((item) => `
         <div class="class-row"><span>${escapeHtml(item.name)}（${item.child_count}人）</span>
-        <button type="button" data-rename-class="${item.class_id}">名前変更</button></div>`).join('');
-    const children = await apiRequest('/api/children');
-    document.getElementById('childAssignments').innerHTML = (children.children || []).map((child) => `
-        <label class="class-row"><span>${escapeHtml(child.name)}</span>
-        <select data-child-class="${child.child_id}">
-            <option value="">未所属</option>
-            ${(result.classes || []).map((item) => `<option value="${item.class_id}" ${item.class_id === child.class_id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
-        </select></label>`).join('');
+        <div class="class-actions">
+            <button type="button" data-rename-class="${item.class_id}">名前変更</button>
+            <button type="button" class="danger-button" data-delete-class="${item.class_id}" data-class-name="${escapeHtml(item.name)}" data-child-count="${item.child_count}">削除</button>
+        </div></div>`).join('') || '<p class="class-empty">クラスが登録されていません。</p>';
 }
 
 // 現在の児童間について、distance_inferの推論結果と関連度スコアを一覧表示する。
@@ -638,7 +822,7 @@ function renderRelationSummary() {
                 </div>`);
         }
     }
-    graph.innerHTML = rows.length ? rows.join('') : '<span>比較できる児童データがありません</span>';
+    graph.innerHTML = rows.length ? rows.join('') : '<span>比較できる子どものデータがありません</span>';
 }
 
 async function openRelationModal() {
@@ -661,7 +845,7 @@ function renderRelatedNetwork() {
     const children = state.children;
 
     if (children.length < 2) {
-        container.innerHTML = '<p>関係を表示できる児童が不足しています。</p>';
+        container.innerHTML = '<p>関係を表示できる子どもの数が足りません。</p>';
         return;
     }
 
@@ -766,7 +950,7 @@ function renderRelatedNetwork() {
             class="network-svg"
             viewBox="0 0 ${width} ${height}"
             role="img"
-            aria-label="児童間の関係ネットワーク図">
+            aria-label="子ども同士の関係ネットワーク図">
 
             ${edges}
             ${nodeHtml}
@@ -866,20 +1050,73 @@ async function refreshStudentManageList() {
         apiRequest('/api/classes')
     ]);
     const classes = classesResult.classes || [];
-    document.getElementById('studentManageList').innerHTML = (childrenResult.children || []).map((child) => {
+    const children = childrenResult.children || [];
+    const classNames = new Map(classes.map((item) => [item.class_id, item.name]));
+    document.getElementById('studentManageCount').textContent = `${children.length}人`;
+    document.getElementById('studentManageList').innerHTML = children.length ? children.map((child) => {
         const isTeacher = isTeacherFlag(child.child_id);
-        return `<div class="student-manage-row ${isTeacher ? 'is-teacher' : ''}" data-manage-row="${child.child_id}">
-            <span class="student-manage-name">${escapeHtml(child.name)}${isTeacher ? '<span class="teacher-badge" title="先生の端末">🧑‍🏫 先生</span>' : ''}</span>
-            <select data-manage-class="${child.child_id}">
+        return `<tr class="student-manage-row ${isTeacher ? 'is-teacher' : ''}" data-manage-row="${child.child_id}">
+            <td>${child.child_id}</td>
+            <td class="student-manage-name">${escapeHtml(child.name)}</td>
+            <td><select data-manage-class="${child.child_id}" aria-label="${escapeHtml(child.name)}の所属クラス">
                 <option value="">未所属</option>
                 ${classes.map((item) => `<option value="${item.class_id}" ${item.class_id === child.class_id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
-            </select>
-            <label class="teacher-checkbox">
+            </select></td>
+            <td><label class="teacher-checkbox">
                 <input type="checkbox" data-manage-teacher="${child.child_id}" ${isTeacher ? 'checked' : ''}>
-                先生
-            </label>
-        </div>`;
-    }).join('');
+                先生用
+            </label></td>
+        </tr>`;
+    }).join('') : '<tr><td colspan="4">登録されている子どもはいません</td></tr>';
+    document.getElementById('studentDeleteList').innerHTML = children.length ? children.map((child) => `
+        <tr>
+            <td><input type="checkbox" data-delete-child="${child.child_id}" aria-label="${escapeHtml(child.name)}を削除対象にする"></td>
+            <td>${child.child_id}</td>
+            <td>${escapeHtml(child.name)}</td>
+            <td>${escapeHtml(classNames.get(child.class_id) || '未所属')}</td>
+        </tr>`).join('') : '<tr><td colspan="4">削除できる子どもはいません</td></tr>';
+    document.getElementById('selectAllStudentDelete').checked = false;
+    updateStudentDeleteSelection();
+}
+
+function updateStudentDeleteSelection() {
+    const checkboxes = [...document.querySelectorAll('[data-delete-child]')];
+    const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+    const selectAll = document.getElementById('selectAllStudentDelete');
+    selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    document.getElementById('studentDeleteSelectionCount').textContent = `${selectedCount}人選択中`;
+    document.getElementById('deleteSelectedChildrenButton').disabled = selectedCount === 0;
+}
+
+async function deleteSelectedChildren() {
+    const childIds = [...document.querySelectorAll('[data-delete-child]:checked')]
+        .map((checkbox) => Number(checkbox.dataset.deleteChild));
+    if (!childIds.length) return;
+    if (!confirm(`選択した${childIds.length}人の子どもと関連データを削除します。よろしいですか？`)) return;
+
+    const button = document.getElementById('deleteSelectedChildrenButton');
+    button.disabled = true;
+    setMessage('studentDeleteMessage', '削除中...');
+    try {
+        const result = await apiRequest('/api/children', {
+            method: 'DELETE',
+            body: JSON.stringify({ child_ids: childIds })
+        });
+        childIds.forEach((childId) => {
+            state.teacherFlags.delete(childId);
+            delete state.mlBehavior[childId];
+            delete state.mlAnomalies[childId];
+            delete state.mlDetailOpenStates[childId];
+        });
+        localStorage.setItem('sukusuteTeacherFlags', JSON.stringify([...state.teacherFlags]));
+        await Promise.all([loadDashboard(), refreshStudentManageList()]);
+        setMessage('studentManageMessage', result.msg || '子どもを削除しました。');
+        openModal('studentManageModal');
+    } catch (error) {
+        setMessage('studentDeleteMessage', error.message);
+        button.disabled = false;
+    }
 }
 
 // 指定したモーダルだけを表示する。
@@ -923,15 +1160,23 @@ function formatDate(date) {
 
 // ===== 画面フォームとメニューのイベント処理 =====
 
-document.getElementById('loginForm').addEventListener('submit', async (event) => {
+async function submitLogin(event) {
     event.preventDefault();
+    const button = document.getElementById('loginButton');
+    if (button.disabled) return;
+    button.disabled = true;
     setMessage('loginMessage', '');
     try {
         await login(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
     } catch (error) {
         setMessage('loginMessage', error.message);
+    } finally {
+        button.disabled = false;
     }
-});
+}
+
+document.getElementById('loginForm').addEventListener('submit', submitLogin);
+document.getElementById('loginButton').addEventListener('click', submitLogin);
 
 document.getElementById('registerForm').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -974,8 +1219,44 @@ document.getElementById('menuButton').addEventListener('click', () => {
 });
 
 document.getElementById('closeMenuButton').addEventListener('click', closeMenu);
-document.getElementById('openClassButton').addEventListener('click', () => { openClassModal(); });
+document.getElementById('signageToggleButton').addEventListener('click', () => {
+    setSignageMode(!document.body.classList.contains('signage-mode'));
+});
+document.getElementById('signageExitButton').addEventListener('click', () => setSignageMode(false));
+document.getElementById('modelAnomalyList').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-anomaly-child]');
+    if (button) openStudentDetailModal(Number(button.dataset.anomalyChild));
+});
+document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && document.body.classList.contains('signage-mode')) {
+        setSignageMode(false, false);
+    } else {
+        ensureSignageAutoScroll();
+    }
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.body.classList.contains('signage-mode')) {
+        setSignageMode(false);
+    }
+});
+window.addEventListener('resize', ensureSignageAutoScroll);
+document.querySelectorAll('[data-display-mode]').forEach((button) => button.addEventListener('click', () => {
+    setDisplayMode(button.dataset.displayMode);
+}));
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
+document.querySelector('[data-action="display-settings"]').addEventListener('click', (event) => {
+    const submenu = document.getElementById('displayModeMenu');
+    const isOpen = submenu.classList.toggle('is-hidden') === false;
+    event.currentTarget.setAttribute('aria-expanded', String(isOpen));
+});
+document.querySelector('[data-action="display-horizontal"]').addEventListener('click', () => {
+    setDisplayMode('horizontal');
+    closeMenu();
+});
+document.querySelector('[data-action="display-square"]').addEventListener('click', () => {
+    setDisplayMode('square');
+    closeMenu();
+});
 document.querySelector('[data-action="class"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openClassModal(); });
 document.querySelector('[data-action="student-manage"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openStudentManageModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
@@ -1026,6 +1307,24 @@ document.getElementById('classForm').addEventListener('submit', async (event) =>
     }
 });
 document.getElementById('classList').addEventListener('click', async (event) => {
+    const deleteButton = event.target.closest('[data-delete-class]');
+    if (deleteButton) {
+        const classId = Number(deleteButton.dataset.deleteClass);
+        const className = deleteButton.dataset.className;
+        const childCount = Number(deleteButton.dataset.childCount);
+        const unassigned = childCount ? `所属している${childCount}人は未所属になります。` : '所属している子どもはいません。';
+        if (!confirm(`クラス「${className}」を削除しますか？\n${unassigned}\n子どもの計測データは削除されません。`)) return;
+        try {
+            const result = await apiRequest(`/api/classes/${classId}`, { method: 'DELETE' });
+            if (state.selectedClassId === classId) state.selectedClassId = null;
+            await loadClasses();
+            await refreshClassList();
+            setMessage('classMessage', result.msg || 'クラスを削除しました。');
+        } catch (error) {
+            setMessage('classMessage', error.message);
+        }
+        return;
+    }
     const button = event.target.closest('[data-rename-class]');
     if (!button) return;
     const name = prompt('新しいクラス名');
@@ -1035,15 +1334,6 @@ document.getElementById('classList').addEventListener('click', async (event) => 
         await refreshClassList();
         await loadClasses();
     } catch (error) { alert(error.message); }
-});
-document.getElementById('childAssignments').addEventListener('change', async (event) => {
-    const select = event.target.closest('[data-child-class]');
-    if (!select) return;
-    await apiRequest(`/api/children/${select.dataset.childClass}/class`, {
-        method: 'PATCH', body: JSON.stringify({ class_id: Number(select.value) || null })
-    });
-    await loadClasses();
-    await refreshClassList();
 });
 document.getElementById('studentManageList').addEventListener('change', async (event) => {
     const select = event.target.closest('[data-manage-class]');
@@ -1066,6 +1356,19 @@ document.getElementById('studentManageList').addEventListener('change', async (e
         renderStudents();
     }
 });
+document.getElementById('openStudentDeleteModalButton').addEventListener('click', () => {
+    setMessage('studentDeleteMessage', '');
+    updateStudentDeleteSelection();
+    openModal('studentDeleteModal');
+});
+document.getElementById('studentDeleteList').addEventListener('change', updateStudentDeleteSelection);
+document.getElementById('selectAllStudentDelete').addEventListener('change', (event) => {
+    document.querySelectorAll('[data-delete-child]').forEach((checkbox) => {
+        checkbox.checked = event.target.checked;
+    });
+    updateStudentDeleteSelection();
+});
+document.getElementById('deleteSelectedChildrenButton').addEventListener('click', deleteSelectedChildren);
 document.getElementById('accountDeleteForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!confirm('アカウントを削除しますか？この操作は取り消せません。')) return;

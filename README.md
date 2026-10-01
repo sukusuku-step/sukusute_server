@@ -17,6 +17,26 @@ uv run python -m sukusute_server
 
 デフォルトでは全ネットワークインターフェースの8000番ポート（`0.0.0.0:8000`）で待ち受けます。ローカルでは `http://localhost:8000` を開いてください。VPSでは下記の手順で3000番ポートを使用します。APIドキュメントはそれぞれのURLに `/docs` を付けて確認できます。`frontend/` の画面も同じアプリから配信されます。
 
+### 名札デバイスのシミュレーション
+
+サーバー起動中に別のターミナルから実行すると、ローマ字のランダムな名前の名札を指定台数分（1〜30台、既定30台）作成し、実機と同じCSV・端末状態形式で10秒ごとに `http://localhost:8000` へ送信します。CSVの`Start`はシミュレーター起動時刻で、`Timestamp`は0秒から送信サンプル数に応じて累積します。各周期で端末ごとにCSVを1つ送り、そのCSVに担当する全ての他端末との距離列を含めます。各ペアはchild_idの小さい端末側だけが送信するため重複しません。通常個体は30分で約1500歩（初期30歩を含む）増えるペースです。既定の低活動対象3台は最初の10分で通常の歩数・センサー値を送り基準を作り、その後約1歩/分に歩数を抑えて異常を出しやすくします。低活動中は加速度・ジャイロの変動も小さくします。距離推論に必要な6000サンプルは実時間で約10分かけて蓄積され、一括ウォームアップ送信は行いません。M5実機と同じく、児童名検索は `/api/children/search`、端末状態は `/api/device_status`、センサーCSVは `/api/push_csv/{child_id}` を使います。
+
+```sh
+uv run python db_utils/simulate_nametags.py
+```
+
+送信を1回だけ行う場合や、台数・周期を変える場合:
+
+```sh
+uv run python db_utils/simulate_nametags.py --cycles 1
+uv run python db_utils/simulate_nametags.py --count 10
+uv run python db_utils/simulate_nametags.py --count 10 --low-activity-count 2
+uv run python db_utils/simulate_nametags.py --count 10 --low-activity-count 0
+uv run python db_utils/simulate_nametags.py --count 30 --interval 10
+```
+
+モデル異常を表示するには、子どもごとの24時間分のベースライン履歴が必要です。新規に作った低活動個体では、履歴がたまるまで歩数異常がすぐに表示されない場合があります。作成した児童と送信データはDBに残ります。名札名は `Sim00-MatsumotoMisaki` 形式で、再実行時は `Sim番号-` の児童を再利用します。停止は `Ctrl+C` です。
+
 ### VPSでの起動
 
 VPS上で次を実行します。
@@ -89,6 +109,7 @@ uv run alembic revision --autogenerate -m "変更内容"
 | `GET` | `/api/classes` | クラス一覧 | ログイン中の教師にクラス一覧と児童数を返す |
 | `POST` | `/api/classes` | クラス追加 | 新しいクラスを作成する |
 | `PATCH` | `/api/classes/{class_id}` | クラス変更 | クラス名を変更する |
+| `DELETE` | `/api/classes/{class_id}` | クラス削除 | クラスを削除し、所属していた子どもは未所属に戻す。計測データは保持する |
 | `PATCH` | `/api/children/{child_id}/class` | 所属クラス変更 | 児童を指定クラスへ移動する。class_idをnullにすると未所属に戻す |
 | `GET` | `/api/health` | ヘルスチェック | サーバが稼働していれば `status: "ok"` を返す |
 | `POST` | `/api/device_status` | M5端末状態受信 | バッテリー残量とWiFi RSSIをメモリ上の最新値として保持する |

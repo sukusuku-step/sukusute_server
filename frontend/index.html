@@ -14,7 +14,7 @@
             <p>先生用ログイン</p>
             <label>ユーザー名<input id="loginUsername" required autocomplete="username"></label>
             <label>パスワード<input id="loginPassword" type="password" required autocomplete="current-password"></label>
-            <button class="primary-button" type="submit">ログイン</button>
+            <button id="loginButton" class="primary-button" type="submit">ログイン</button>
             <button id="showRegisterButton" class="text-button" type="button">初めて利用する場合はこちら</button>
             <div id="loginMessage" class="form-message"></div>
         </form>
@@ -43,27 +43,42 @@
                         <span class="sr-only">クラスを選択</span>
                         <select id="classSelector"><option value="">全員のようす</option></select><span class="select-arrow">▶</span>
                     </label>
-                    <button id="openClassButton" class="class-manage-button" type="button">クラスを追加・変更</button>
+                    <div id="displayModeToggleButton" class="display-mode-switch" role="group" aria-label="UIを変更">
+                        <button type="button" data-display-mode="horizontal">横型</button>
+                        <button type="button" data-display-mode="square">四角</button>
+                    </div>
                 </div>
                 <input id="dateSelector" class="date-selector" type="date" aria-label="日付">
+                <button id="signageToggleButton" class="class-manage-button" type="button" aria-pressed="false">サイネージ表示</button>
+                <button id="signageExitButton" class="signage-exit-button" type="button" aria-label="サイネージ表示を終了" title="サイネージ表示を終了" hidden>×</button>
             </div>
             <div id="classSummary" class="class-summary" aria-label="登録済みクラス"></div>
             <div id="refreshMessage" class="refresh-message" role="status"></div>
             <div class="dashboard-layout">
-                <section class="students-panel" aria-label="児童の状態・推論結果一覧">
+                <section class="students-panel" aria-label="子どもの状態・推論結果一覧">
                     <div class="student-panel-heading">
-                        <h2>児童ごとのステータス表示</h2>
-                        <p>最新の姿勢状態・走行状態・活動量、他児童との距離状態・関連度スコアを表示します。</p>
+                        <h2>子どもごとのステータス</h2>
+                        <p>最新の姿勢・走行・活動量と、子ども同士の距離・関連度を表示します。</p>
                     </div>
-                    <div id="studentGrid" class="student-grid"><div class="loading">児童データを読み込み中...</div></div>
+                    <div id="studentGrid" class="student-grid"><div class="loading">子どものデータを読み込み中...</div></div>
                 </section>
-                <aside class="ranking-panel">
-                    <h2>歩数増加ランキング（1分間）</h2>
-                    <ol id="rankingList" class="ranking-list">
-                        <li><span>1.</span><strong>-</strong></li><li><span>2.</span><strong>-</strong></li>
-                        <li><span>3.</span><strong>-</strong></li><li><span>4.</span><strong>-</strong></li>
-                        <li><span>5.</span><strong>-</strong></li>
-                    </ol>
+                <aside class="ranking-sidebar">
+                    <section class="ranking-panel">
+                        <h2>歩数増加ランキング（1分間）</h2>
+                        <ol id="rankingList" class="ranking-list">
+                            <li><span>1.</span><strong>-</strong></li><li><span>2.</span><strong>-</strong></li>
+                            <li><span>3.</span><strong>-</strong></li><li><span>4.</span><strong>-</strong></li>
+                            <li><span>5.</span><strong>-</strong></li>
+                        </ol>
+                    </section>
+                    <section id="modelAnomalyPanel" class="model-anomaly-panel" aria-live="polite">
+                        <div class="model-anomaly-heading">
+                            <span class="model-anomaly-mark" aria-hidden="true">!</span>
+                            <h2>モデル異常検知</h2>
+                            <span id="modelAnomalyCount" class="model-anomaly-count"></span>
+                        </div>
+                        <ul id="modelAnomalyList" class="model-anomaly-list"></ul>
+                    </section>
                 </aside>
             </div>
         </main>
@@ -78,29 +93,39 @@
             <strong id="menuUsername">-</strong>
         </div>
 
-        <button data-action="related-network">関係ネットワーク図を見る</button>
-        <button data-action="relation">相関関係を一覧で見る</button>
-        <button data-action="class">所属クラスの管理</button>
-        <button data-action="student-manage">児童データの管理</button>
-        <button data-action="refresh">ステータスの更新 ↻</button>
-        <button data-action="account-delete">アカウントを削除 ⌫</button>
-        <button data-action="logout">ログアウト ⇥</button>
+        <button data-action="display-settings" data-menu-tone="lavender" type="button" aria-expanded="false">🖥️ UI変更</button>
+        <div id="displayModeMenu" class="menu-submenu is-hidden">
+            <div class="menu-section-label">モード選択</div>
+            <button data-action="display-horizontal" data-menu-tone="blue" type="button" aria-pressed="true">↔️ 横型表示</button>
+            <button data-action="display-square" data-menu-tone="pink" type="button" aria-pressed="false">🔲 四角表示</button>
+        </div>
+
+        <button data-action="related-network" data-menu-tone="blue">🕸️ 関係ネットワーク図を見る</button>
+        <button data-action="relation" data-menu-tone="green">📊 相関関係を一覧で見る</button>
+        <button data-action="class" data-menu-tone="yellow">🏫 所属クラスの管理</button>
+        <button data-action="student-manage" data-menu-tone="pink">👧 子どもの管理</button>
+        <button data-action="refresh" data-menu-tone="mint">🔄 ステータスの更新</button>
+        <button data-action="account-delete" data-menu-tone="peach">🗑️ アカウントを削除</button>
+        <button data-action="logout" data-menu-tone="rose">🚪 ログアウト</button>
     </aside>
     <!-- クラス管理・関係図・アカウント削除で共有するモーダル領域 -->
     <div id="modalLayer" class="modal-layer is-hidden">
+        <section id="studentDetailModal" class="modal-card student-detail-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="子どもの詳細を閉じる">×</button>
+            <h2 id="studentDetailTitle">子どもの詳細</h2>
+            <div id="studentDetailContent" class="student-detail-content"></div>
+        </section>
         <section id="classModal" class="modal-card is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
             <h2>クラスの管理</h2>
             <form id="classForm" class="inline-form"><input id="newClassName" placeholder="新しいクラス名" required><button class="primary-button">追加</button></form>
             <div id="classMessage" class="form-message"></div>
             <div id="classList" class="class-list"></div>
-            <h3>児童の所属クラス</h3>
-            <div id="childAssignments" class="class-list"></div>
         </section>
         <section id="accountDeleteModal" class="modal-card is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
             <h2>アカウント削除</h2>
-            <p class="modal-caption">削除すると、同じユーザー名で再登録するまでログインできません。この操作は取り消せません。</p>
+            <p class="modal-caption">削除するとユーザー名で再登録するまでログインできません。この操作は取り消せません。</p>
             <form id="accountDeleteForm" class="delete-form">
                 <label>ユーザー名<div id="deleteUsernameDisplay" class="readonly-value"></div></label>
                 <label>現在のパスワード<input id="deletePassword" type="password" required autocomplete="current-password"></label>
@@ -110,13 +135,13 @@
         </section>
         <section id="relationModal" class="modal-card relation-modal is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>各児童間の相関関係</h2><p class="modal-caption">児童間の最新の距離状態のステータスと、その履歴から算出した関連度スコアを一覧で確認できます。</p>
+            <h2>子ども同士の相関関係</h2><p class="modal-caption">子ども同士の最新の距離状態と、履歴から算出した関連度スコアを一覧で確認できます。</p>
             <div id="relationGraph" class="relation-graph"></div>
         </section>
         <section id="relatedNetworkModal" class="modal-card related-network-modal is-hidden">
             <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>児童間の関係ネットワーク図</h2>
-            <p class="modal-caption">線が太いほど児童間の関連度が高いことを表します。線をクリックすると詳細を確認できます。関連度スコアが0の場合は線が描画されません。</p>
+            <h2>子ども同士の関係ネットワーク図</h2>
+            <p class="modal-caption">線が太いほど子ども同士の関係が強いことを表します。線をクリックすると詳細を確認できます。関連度スコアが0の場合は線が描画されません。</p>
             <div class="network-layout">
                 <div id="relatedNetworkGraph" class="related-network-graph"></div>
                 <aside id="networkEdgeDetail" class="network-edge-detail">
@@ -131,15 +156,41 @@
                 <span class="legend-edge high"></span><small>高い</small>
             </div>
         </section>
-        <section id="studentManageModal" class="modal-card is-hidden">
-            <button class="modal-close" data-close-modal type="button">×</button>
-            <h2>生徒管理</h2>
-            <p class="modal-caption">クラスの割り振りと、先生に取り付けているデバイスにはチェックを入れてください。</p>
-            <div id="studentManageMessage" class="form-message"></div>
-            <div id="studentManageList" class="student-manage-list"></div>
+        <section id="studentManageModal" class="modal-card student-manage-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="子ども管理を閉じる">×</button>
+            <h2>子どもの管理</h2>
+            <p class="modal-caption">所属クラスと先生用端末の設定を変更できます。</p>
+            <div class="student-manage-toolbar">
+                <span id="studentManageCount" class="table-count">0人</span>
+                <button id="openStudentDeleteModalButton" class="danger-button" type="button">子どもを削除...</button>
+            </div>
+            <div id="studentManageMessage" class="form-message" role="status"></div>
+            <div class="student-table-wrap">
+                <table class="student-manage-table">
+                    <thead><tr><th scope="col">ID</th><th scope="col">名前</th><th scope="col">所属クラス</th><th scope="col">端末</th></tr></thead>
+                    <tbody id="studentManageList"><tr><td colspan="4">読み込み中...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+        <section id="studentDeleteModal" class="modal-card student-delete-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="子どもの削除を閉じる">×</button>
+            <h2>子どもの削除</h2>
+            <p class="modal-caption delete-warning">選択した子どもと、歩数・距離・推論履歴を削除します。この操作は取り消せません。</p>
+            <div id="studentDeleteMessage" class="form-message" role="alert"></div>
+            <div class="delete-selection-toolbar">
+                <label><input id="selectAllStudentDelete" type="checkbox">すべて選択</label>
+                <span id="studentDeleteSelectionCount" aria-live="polite">0人選択中</span>
+            </div>
+            <div class="student-table-wrap">
+                <table class="student-manage-table student-delete-table">
+                    <thead><tr><th scope="col">選択</th><th scope="col">ID</th><th scope="col">名前</th><th scope="col">所属クラス</th></tr></thead>
+                    <tbody id="studentDeleteList"></tbody>
+                </table>
+            </div>
+            <button id="deleteSelectedChildrenButton" class="danger-button" type="button" disabled>選択した子どもを削除</button>
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
-    <script src="app.js?v=20260929-ml1"></script>
+    <script src="app.js?v=20261001-date-device-status-fix1"></script>
 </body>
 </html>

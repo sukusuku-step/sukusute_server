@@ -1755,7 +1755,7 @@ wheels = [
 [[package]]
 name = "sukusute-machine-learning"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/sukusuku-step/sukusute_machine_learning?rev=feat%2Fcnn_lstm#0fef645a8db0fbeacbc3912c83732ad5bc44e4a2" }
+source = { git = "ssh://git@github.com/sukusuku-step/sukusute_machine_learning?rev=feat%2Fcnn_lstm#fb267d8aedfca3c16fd3cf7bafcfdb1cfd39e768" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },

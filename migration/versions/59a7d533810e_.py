@@ -41,7 +41,7 @@ def upgrade() -> None:
     sa.Column('baseline_mag_mean_median', sa.Float(), nullable=True),
     sa.Column('baseline_mag_mean_mad_scale', sa.Float(), nullable=True),
     sa.ForeignKeyConstraint(['child_id'], ['child.child_id'], ),
-    sa.PrimaryKeyConstraint('child_id')
+    sa.PrimaryKeyConstraint('child_id', 'date')
     )
     op.add_column('child_distance_evalhist', sa.Column('confidence', sa.Float(), nullable=False))
     op.add_column('child_distance_evalhist', sa.Column('score', sa.Float(), nullable=False))

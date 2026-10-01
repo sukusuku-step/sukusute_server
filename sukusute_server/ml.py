@@ -100,6 +100,8 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
             sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.date >= datetime.datetime.now() - datetime.timedelta(minutes=10)
         )
     ):
+        await evaluate_distance_data(dbsession, child_id, distance_child_ids)
+        await dbsession.commit()
         return
 
     # ある1人の児童の計測データ（歩数・加速度）を取得
@@ -113,6 +115,8 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     # 直近10分間の計測データとして取得
     single_records_10min = [record for record in single_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=11)][-6000:]
     if len(single_records_10min) < 6000:
+        await evaluate_distance_data(dbsession, child_id, distance_child_ids)
+        await dbsession.commit()
         return
 
     current_10min_features = calculate_current_10min_features(single_records_10min)
@@ -189,7 +193,18 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         baseline_mag_mean_mad_scale=baseline_result["mag_mean"]["mad_scale"] if baseline_result else None
     ))
 
-    # ある1人の児童と相手デバイスとの相対距離の計測データを取得
+    await evaluate_distance_data(dbsession, child_id, distance_child_ids)
+    await dbsession.commit()
+
+
+async def evaluate_distance_data(
+    dbsession: sukusute_server.database_models.SessionDep,
+    child_id: int,
+    distance_child_ids: list[int],
+) -> None:
+    if not distance_child_ids:
+        return
+
     distance_stmt = select(sukusute_server.database_models.ChildDistanceData) \
         .where(or_(
             sukusute_server.database_models.ChildDistanceData.child_id_1 == child_id,
@@ -197,47 +212,50 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
         )) \
         .order_by(sukusute_server.database_models.ChildDistanceData.date.asc())
     distance_records = (await dbsession.execute(distance_stmt)).scalars().all()
+    cutoff = datetime.datetime.now() - datetime.timedelta(minutes=11)
+    distance_records_10min = [record for record in distance_records if record.date > cutoff]
 
-    # 直近10分間の計測データとして取得
-    # それぞれの相手デバイスに対してdistance_inferへの入力形式を作成（過去10分単位）
-    distance_records_10min = [record for record in distance_records if record.date > datetime.datetime.now()-datetime.timedelta(minutes=11)]
+    recent_evaluations = (await dbsession.execute(
+        select(
+            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1,
+            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2,
+        ).where(
+            sukusute_server.database_models.ChildDistanceEvaluationHistory.date >= datetime.datetime.now() - datetime.timedelta(minutes=10),
+            or_(
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == child_id,
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == child_id,
+            ),
+        )
+    )).all()
+    recent_pairs = {(row[0], row[1]) for row in recent_evaluations}
 
-    # 計測を行っている全ての相手デバイスに対して計算する
-    for other_child_id in distance_child_ids:
-        if child_id > other_child_id:
-            child_distance_records_10min = [record for record in distance_records_10min if record.child_id_1 == other_child_id][:6000]
-        else:
-            child_distance_records_10min = [record for record in distance_records_10min if record.child_id_2 == other_child_id][:6000]
-
-        # 距離データ不足の相手がいたらその相手だけ飛ばす
-        if len(child_distance_records_10min) < 6000:
+    for other_child_id in set(distance_child_ids):
+        pair = (min(child_id, other_child_id), max(child_id, other_child_id))
+        if pair in recent_pairs:
             continue
 
-        distance_input = np.fromiter((record.distance for record in child_distance_records_10min), dtype=np.float32)
+        if child_id > other_child_id:
+            pair_records = [record for record in distance_records_10min if record.child_id_1 == other_child_id][:6000]
+        else:
+            pair_records = [record for record in distance_records_10min if record.child_id_2 == other_child_id][:6000]
+        if len(pair_records) < 6000:
+            continue
 
-        # それぞれの相手デバイスに対して直近10分間の相対距離の計測データから分類ラベルを推定
+        distance_input = np.fromiter((record.distance for record in pair_records), dtype=np.float32)
         distance_result = sukusute_machine_learning.inference.predict_distance.distance_infer(distance_input)
-
-        # 過去の相対距離の分類ラベルの推論結果を取得
-        distance_evalhist_stmt = select(sukusute_server.database_models.ChildDistanceEvaluationHistory.evaluated) \
+        history_stmt = select(sukusute_server.database_models.ChildDistanceEvaluationHistory.evaluated) \
             .where(and_(
-                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == min((child_id, other_child_id)),
-                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == max((child_id, other_child_id)),
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == pair[0],
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == pair[1],
             )) \
             .order_by(sukusute_server.database_models.ChildDistanceEvaluationHistory.date.asc())
-        distance_evalhist_records = (await dbsession.execute(distance_evalhist_stmt)).scalars().all()
-
-        # 過去全ての相対距離の分類ラベルの推論結果からある児童対児童の関連度スコアを算出
-        relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(distance_evalhist_records)
-
-        # 距離・関係度スコアの評価結果をDBに保存
+        history = (await dbsession.execute(history_stmt)).scalars().all()
+        relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(history)
         dbsession.add(sukusute_server.database_models.ChildDistanceEvaluationHistory(
-            child_id_1=min((child_id, other_child_id)),
-            child_id_2=max((child_id, other_child_id)),
+            child_id_1=pair[0],
+            child_id_2=pair[1],
             date=datetime.datetime.now(),
             evaluated=sukusute_server.database_models.ChildDistanceEvaluationEnum(distance_result["label"]),
             confidence=distance_result["confidence"],
-            score=relatedness_result
+            score=relatedness_result,
         ))
-
-    await dbsession.commit()
