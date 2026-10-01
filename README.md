@@ -32,7 +32,7 @@ uv run python db_utils/simulate_nametags.py --cycles 1
 uv run python db_utils/simulate_nametags.py --count 30 --interval 10
 ```
 
-作成した児童と送信データはDBに残ります。再実行時は `SIM-番号-` の児童を再利用します。停止は `Ctrl+C` です。
+作成した児童と送信データはDBに残ります。名札名は `Sim00-MatsumotoMisaki` 形式で、再実行時は `Sim番号-` の児童を再利用します。停止は `Ctrl+C` です。
 
 ### VPSでの起動
 

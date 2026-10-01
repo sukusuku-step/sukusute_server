@@ -25,7 +25,7 @@ GIVEN_NAMES = [
     "Hina", "Ren", "Rin", "Ao", "Yui", "Minato", "Sakura", "Yuma", "Aoi", "Haruto",
     "Misaki", "Itsuki", "Mei", "Yamato", "Riko", "Asahi", "Tsumugi", "Sota", "An", "Ritsu",
 ]
-SIM_NAME_PATTERN = re.compile(r"^SIM-(\d+)-")
+SIM_NAME_PATTERN = re.compile(r"^Sim(\d+)-")
 CSV_HEADER = [
     "Timestamp", "Steps", "Ax", "Ay", "Az", "Gx", "Gy", "Gz", "Mx", "My", "Mz", "Start",
 ]
@@ -54,7 +54,7 @@ def request_json(method: str, url: str, **kwargs) -> dict:
 
 def random_simulator_name(slot: int, used_names: set[str], rng: random.Random) -> str:
     while True:
-        name = f"SIM-{slot:02d}-{rng.choice(FAMILY_NAMES)}{rng.choice(GIVEN_NAMES)}-{rng.randrange(1000, 10000)}"
+        name = f"Sim{slot - 1:02d}-{rng.choice(FAMILY_NAMES)}{rng.choice(GIVEN_NAMES)}"
         if name not in used_names:
             used_names.add(name)
             return name
@@ -68,7 +68,7 @@ def enroll_devices(base_url: str, count: int, rng: random.Random) -> list[tuple[
     for child in children:
         match = SIM_NAME_PATTERN.match(child["name"])
         if match:
-            slot = int(match.group(1))
+            slot = int(match.group(1)) + 1
             if 1 <= slot <= count:
                 existing.setdefault(slot, (child["name"], child["child_id"]))
 
