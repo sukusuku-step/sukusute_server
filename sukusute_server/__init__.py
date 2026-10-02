@@ -11,6 +11,7 @@ import typing
 import asyncio
 import csv
 import io
+import pydantic
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,7 +62,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.middleware("http")
 async def prevent_frontend_cache(request: fastapi.Request, call_next):
@@ -1240,6 +1240,83 @@ async def get_monthly_stats(
         remaining_days=remaining_days,
         last_day=last_day
     )
+
+# ===== MLコンフィグ =====
+
+class MLConfigUpdate(pydantic.BaseModel):
+    anomaly_threshold_percent: float
+    baseline_min_data_minutes: int
+    baseline_max_days: int
+    relatedness_max_history: int
+
+@app.get("/api/ml/config", tags=["API"])
+async def get_ml_config(
+    teacher: TeacherDep,
+):
+    config = ml.get_ml_config()
+
+    return {
+        "status": "ok",
+        "anomaly_threshold_percent":
+            config["anomaly_threshold_ratio"] * 100.0,
+        "baseline_min_data_minutes":
+            config["baseline_min_data_minutes"],
+        "baseline_max_days":
+            config["baseline_max_days"],
+        "relatedness_max_history":
+            config["relatedness_max_history"],
+    }
+
+
+@app.patch("/api/ml/config", tags=["API"])
+async def update_ml_config(
+    data: MLConfigUpdate,
+    teacher: TeacherDep,
+):
+    if not 0 < data.anomaly_threshold_percent <= 1000:
+        raise fastapi.HTTPException(
+            422,
+            "異常検知しきい値が不正です"
+        )
+
+    if data.baseline_min_data_minutes < 0:
+        raise fastapi.HTTPException(
+            422,
+            "最低蓄積時間が不正です"
+        )
+
+    if data.baseline_max_days < 1:
+        raise fastapi.HTTPException(
+            422,
+            "最大過去日数は1日以上にしてください"
+        )
+
+    if data.relatedness_max_history < 1:
+        raise fastapi.HTTPException(
+            422,
+            "関連度履歴件数は1件以上にしてください"
+        )
+
+    config = ml.update_ml_config(
+        anomaly_threshold_ratio=(
+            data.anomaly_threshold_percent / 100.0
+        ),
+        baseline_min_data_minutes=data.baseline_min_data_minutes,
+        baseline_max_days=data.baseline_max_days,
+        relatedness_max_history=data.relatedness_max_history,
+    )
+
+    return {
+        "status": "ok",
+        "anomaly_threshold_percent":
+            config["anomaly_threshold_ratio"] * 100.0,
+        "baseline_min_data_minutes":
+            config["baseline_min_data_minutes"],
+        "baseline_max_days":
+            config["baseline_max_days"],
+        "relatedness_max_history":
+            config["relatedness_max_history"],
+    }
 
 # ===== ML推論結果API =====
 @app.get("/api/ml/behavior/{child_id}", tags=["API"])

@@ -10,10 +10,51 @@ import sukusute_machine_learning.utils.relatedness
 
 import sukusute_server.database_models
 
-ANOMALY_THRESHOLD_RATIO = 0.50 # 異常検知のしきい値（何%内まで正常とみなすか）
+# ===== フロントエンドのコンフィグから変更可能なML設定 =====
+
+# サーバを再起動すると以下のデフォルト値に戻る
+
+# 何%ベースラインから外れたら異常値とみなすか（例: 0.50 = 50%）
+ANOMALY_THRESHOLD_RATIO = 0.50
+
+# build_baselineを実行するために最低限必要な過去データ量（単位: 分）
+BASELINE_MIN_DATA_MINUTES = 1440
+
+# build_baselineへ渡すデータは最大で過去何日分までか
+BASELINE_MAX_DAYS = 14
+
+# calc_relatednessへ渡す過去の相対距離の推論結果の最大件数
+RELATEDNESS_MAX_HISTORY = 100
+
 ANOMALY_EPS = 1e-6
 
 latest_anomaly_results: dict[int, dict] = {}
+
+def get_ml_config() -> dict:
+    return {
+        "anomaly_threshold_ratio": ANOMALY_THRESHOLD_RATIO,
+        "baseline_min_data_minutes": BASELINE_MIN_DATA_MINUTES,
+        "baseline_max_days": BASELINE_MAX_DAYS,
+        "relatedness_max_history": RELATEDNESS_MAX_HISTORY
+    }
+
+def update_ml_config(
+    anomaly_threshold_ratio: float,
+    baseline_min_data_minutes: int,
+    baseline_max_days: int,
+    relatedness_max_history: int
+) -> dict:
+    global ANOMALY_THRESHOLD_RATIO
+    global BASELINE_MIN_DATA_MINUTES
+    global BASELINE_MAX_DAYS
+    global RELATEDNESS_MAX_HISTORY
+
+    ANOMALY_THRESHOLD_RATIO = anomaly_threshold_ratio
+    BASELINE_MIN_DATA_MINUTES = baseline_min_data_minutes
+    BASELINE_MAX_DAYS = baseline_max_days
+    RELATEDNESS_MAX_HISTORY = relatedness_max_history
+
+    return get_ml_config()
 
 def calculate_current_10min_features(records) -> dict[str, float]:
     steps = np.asarray([record.steps for record in records], dtype=np.float32)
@@ -43,9 +84,17 @@ def calculate_current_10min_features(records) -> dict[str, float]:
     }
 
 # 異常検知システムのために、10分間での計測データがベースラインとどれだけ外れているのかを計算する
-def compare_current_with_baseline(current_features: dict[str, float], baseline_result: dict | None, threshold_ratio: float = ANOMALY_THRESHOLD_RATIO) -> dict | None:
+def compare_current_with_baseline(
+    current_features: dict[str, float],
+    baseline_result: dict | None,
+    threshold_ratio: float | None = None,
+) -> dict | None:
     if not baseline_result:
         return None
+
+    # 何%ベースラインから外れたら異常値とみなすかのしきい値を設定
+    if threshold_ratio is None:
+        threshold_ratio = ANOMALY_THRESHOLD_RATIO
 
     comparisons = {}
     warning = False
@@ -146,21 +195,40 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     activity_result = sukusute_machine_learning.inference.predict_behavior.activity_infer(activity_input)
     del activity_input, single_records_1h
 
+    # build_baselineに利用するデータは最大BASELINE_MAX_DAYS日分に制限
+    baseline_cutoff = datetime.datetime.now() - datetime.timedelta(
+        days = BASELINE_MAX_DAYS
+    )
+
+    baseline_records = [
+        record
+        for record in single_records
+        if record.date >= baseline_cutoff
+    ]
+
     # build_baselineへの入力形式を作成（取れる分の全ての過去データ）
     baseline_input = np.fromiter(((
         record.steps,
         record.ax, record.ay, record.az,
         record.gx, record.gy, record.gz,
         record.mx, record.my, record.mz
-    ) for record in single_records), dtype=(np.float32, 10))
+    ) for record in baseline_records), dtype=(np.float32, 10))
 
     # 算出したベースライン（medianとmad_scale）を取得
     try:
-        baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(baseline_input)["features"]
+        baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(
+            baseline_input,
+            # 何時間分の過去データがベースライン算出に最低必要かを設定
+            BASELINE_MIN_DATA_MINUTES / 60 # 時間単位にしてから関数には渡す
+        )["features"]
     except (ValueError, TypeError):
         baseline_result = None
 
-    anomaly_result = compare_current_with_baseline(current_10min_features, baseline_result)
+    anomaly_result = compare_current_with_baseline(
+        current_10min_features, 
+        baseline_result
+    )
+
     if anomaly_result:
         latest_anomaly_results[child_id] = {
             "date": datetime.datetime.now().isoformat(),
@@ -169,7 +237,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     else:
         latest_anomaly_results.pop(child_id, None)
 
-    del baseline_input, single_records
+    del baseline_input, baseline_records, single_records
 
     # 歩数・加速度・活動量・ベースラインの評価結果をDBに保存
     dbsession.add(sukusute_server.database_models.ChildBehaviorDataEvaluationHistory(
@@ -196,21 +264,23 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     await evaluate_distance_data(dbsession, child_id, distance_child_ids)
     await dbsession.commit()
 
-
 async def evaluate_distance_data(
     dbsession: sukusute_server.database_models.SessionDep,
     child_id: int,
-    distance_child_ids: list[int],
+    distance_child_ids: list[int]
 ) -> None:
     if not distance_child_ids:
         return
 
-    distance_stmt = select(sukusute_server.database_models.ChildDistanceData) \
+    distance_stmt = select(
+        sukusute_server.database_models.ChildDistanceData
+    ) \
         .where(or_(
             sukusute_server.database_models.ChildDistanceData.child_id_1 == child_id,
-            sukusute_server.database_models.ChildDistanceData.child_id_2 == child_id,
+            sukusute_server.database_models.ChildDistanceData.child_id_2 == child_id
         )) \
         .order_by(sukusute_server.database_models.ChildDistanceData.date.asc())
+    
     distance_records = (await dbsession.execute(distance_stmt)).scalars().all()
     cutoff = datetime.datetime.now() - datetime.timedelta(minutes=11)
     distance_records_10min = [record for record in distance_records if record.date > cutoff]
@@ -218,12 +288,12 @@ async def evaluate_distance_data(
     recent_evaluations = (await dbsession.execute(
         select(
             sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1,
-            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2,
+            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2
         ).where(
             sukusute_server.database_models.ChildDistanceEvaluationHistory.date >= datetime.datetime.now() - datetime.timedelta(minutes=10),
             or_(
                 sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == child_id,
-                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == child_id,
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == child_id
             ),
         )
     )).all()
@@ -243,19 +313,27 @@ async def evaluate_distance_data(
 
         distance_input = np.fromiter((record.distance for record in pair_records), dtype=np.float32)
         distance_result = sukusute_machine_learning.inference.predict_distance.distance_infer(distance_input)
-        history_stmt = select(sukusute_server.database_models.ChildDistanceEvaluationHistory.evaluated) \
+
+        history_stmt = select(
+            sukusute_server.database_models.ChildDistanceEvaluationHistory.evaluated
+        ) \
             .where(and_(
                 sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == pair[0],
-                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == pair[1],
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == pair[1]
             )) \
-            .order_by(sukusute_server.database_models.ChildDistanceEvaluationHistory.date.asc())
+            .order_by(
+                sukusute_server.database_models.ChildDistanceEvaluationHistory.date.desc()
+            ) \
+            .limit(RELATEDNESS_MAX_HISTORY) # 関連度スコア計算に用いる過去の推論結果の最大件数を設定（最新のN件）
+        
         history = (await dbsession.execute(history_stmt)).scalars().all()
         relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(history)
+
         dbsession.add(sukusute_server.database_models.ChildDistanceEvaluationHistory(
             child_id_1=pair[0],
             child_id_2=pair[1],
             date=datetime.datetime.now(),
             evaluated=sukusute_server.database_models.ChildDistanceEvaluationEnum(distance_result["label"]),
             confidence=distance_result["confidence"],
-            score=relatedness_result,
+            score=relatedness_result
         ))

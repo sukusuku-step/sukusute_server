@@ -106,6 +106,7 @@
         <button data-action="student-manage" data-menu-tone="pink">👧 子どもの管理</button>
         <button data-action="refresh" data-menu-tone="mint">🔄 ステータスの更新</button>
         <button data-action="account-delete" data-menu-tone="peach">🗑️ アカウントを削除</button>
+        <button data-action="config" data-menu-tone="lavender">⚙️ コンフィグ</button>
         <button data-action="logout" data-menu-tone="rose">🚪 ログアウト</button>
     </aside>
     <!-- クラス管理・関係図・アカウント削除で共有するモーダル領域 -->
@@ -188,6 +189,49 @@
                 </table>
             </div>
             <button id="deleteSelectedChildrenButton" class="danger-button" type="button" disabled>選択した子どもを削除</button>
+        </section>
+        <section id="configModal" class="modal-card config-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="コンフィグを閉じる">×</button>
+            <h2>コンフィグ</h2>
+            <p class="modal-caption">モデルの推論・異常検知に使用する設定を変更できます。再起動するとデフォルト値に戻ります。</p>
+            <form id="configForm" class="config-form">
+                <label>
+                    <span>異常検知におけるしきい値</span>
+                    <div class="config-value-row">
+                        <input id="configAnomalyThreshold" type="number" min="0.1" step="0.1" required>
+                        <span>%</span>
+                    </div>
+                    <small>ベースラインから何%以上外れた場合に異常として検知するか</small>
+                </label>
+                <label>
+                    <span>ベースライン算出に必要な最低過去データ量</span>
+                    <div class="config-time-row">
+                        <input id="configBaselineMinHours" type="number" min="0" step="1" required>
+                        <span>時間</span>
+                        <input id="configBaselineMinMinutes" type="number" min="0" max="59" step="1" required>
+                        <span>分</span>
+                    </div>
+                    <small>最低でこの時間以上の過去データが存在する場合にベースラインが算出されます</small>
+                </label>
+                <label>
+                    <span>ベースライン算出に使用する最大過去日数</span>
+                    <div class="config-value-row">
+                        <input id="configBaselineMaxDays" type="number" min="1" step="1" required>
+                        <span>日</span>
+                    </div>
+                    <small>最大でこの日数分の過去データを用いてベースラインが算出されます</small>
+                </label>
+                <label>
+                    <span>関連度スコア算出に使用する最大履歴件数</span>
+                    <div class="config-value-row">
+                        <input id="configRelatednessMaxHistory" type="number" min="1" step="1" required>
+                        <span>件</span>
+                    </div>
+                    <small>関連度スコア計算に用いる過去の相対距離からの推論結果の最大件数</small>
+                </label>
+                <button class="primary-button" type="submit">設定を保存</button>
+                <div id="configMessage" class="form-message" role="status"></div>
+            </form>
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
