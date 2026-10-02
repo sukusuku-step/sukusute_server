@@ -1896,6 +1896,79 @@ body.square-mode.signage-mode .nearest-person {
     font-variant-numeric: tabular-nums;
 }
 
+.network-edge {
+    transition:
+        stroke-width .15s ease,
+        stroke-opacity .15s ease,
+        opacity .15s ease;
+}
+
+
+/* ノードを選んでいない通常状態 */
+.network-edge.is-dimmed {
+    opacity: .08;
+}
+
+
+/* ノードにカーソルを合わせたとき、
+   その児童につながる線だけ強調 */
+.network-edge.is-highlighted {
+    opacity: 1;
+    stroke-opacity: 1;
+}
+
+
+/* クリックして選択した線 */
+.network-edge.is-selected {
+    opacity: 1;
+    stroke-opacity: 1;
+    filter:
+        drop-shadow(
+            0 0 3px rgba(80, 20, 20, .55)
+        );
+}
+
+
+.network-node {
+    cursor: pointer;
+    transition: opacity .15s ease;
+}
+
+
+.network-node.is-dimmed {
+    opacity: .28;
+}
+
+
+.network-node circle {
+    fill: #f5d4d5;
+    stroke: #4a1111;
+    stroke-width: 2;
+    transition:
+        fill .15s ease,
+        stroke-width .15s ease,
+        filter .15s ease;
+}
+
+
+.network-node:hover circle,
+.network-node:focus circle {
+    fill: #ffe8e9;
+    stroke-width: 3;
+    filter:
+        drop-shadow(
+            0 0 4px rgba(74, 17, 17, .3)
+        );
+}
+
+
+.network-node text {
+    fill: #210707;
+    font-weight: 700;
+    pointer-events: none;
+    user-select: none;
+}
+
 @media (max-width: 800px) {
     .network-layout {
         grid-template-columns: 1fr;
