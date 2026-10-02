@@ -1,10 +1,13 @@
 from logging.config import fileConfig
 import pathlib
+from re import L
+import asyncio
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+from sqlalchemy.ext.asyncio import create_async_engine
 
 import sukusute_server
 
@@ -14,7 +17,7 @@ config = context.config
 
 # Alembic実行時のカレントディレクトリに関係なく、アプリと同じDBを更新する。
 config.set_main_option(
-    "sqlalchemy.url", f"postgresql+psycopg2://sukusute:sukusute@127.0.0.1:5432/sukusute"
+    "sqlalchemy.url", f"postgresql+asyncpg://sukusute:sukusute@127.0.0.1:5432/sukusute"
 )
 
 # Interpret the config file for Python logging.
@@ -58,8 +61,12 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+def do_run_migration(connection):
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
 
-def run_migrations_online() -> None:
+async def run_migrations_online_async() -> None:
     """SQLiteへ接続し、実DBにAlembicマイグレーションを適用する。"""
     """Run migrations in 'online' mode.
 
@@ -67,20 +74,15 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
+    connectable = create_async_engine(
+        config.get_main_option("sqlalchemy.url"),
+        poolclass=pool.NullPool
     )
+    async with connectable.connect() as connection:
+        await connection.run_sync(do_run_migration)
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
-
-        with context.begin_transaction():
-            context.run_migrations()
-
+def run_migrations_online() -> None:
+    asyncio.run(run_migrations_online_async())
 
 if context.is_offline_mode():
     run_migrations_offline()
