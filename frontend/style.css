@@ -19,6 +19,7 @@
     --nameplate-rose: #fe8799;
     --nameplate-coral: #ff977f;
     --nameplate-peach: #ffcd89;
+    --nameplate-pastel: #ffb3a0;
 }
 
 body {
@@ -303,7 +304,7 @@ body {
 
 /* 横型表示では名札の色をバラバラにせず統一する。 */
 body:not(.square-mode) .student-card[data-palette] {
-    --nameplate-accent: var(--nameplate-blue);
+    --nameplate-accent: var(--nameplate-pastel);
 }
 
 .student-name {
