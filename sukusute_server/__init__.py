@@ -21,7 +21,7 @@ import sqlalchemy
 import sqlalchemy.orm
 from sqlalchemy import and_, or_
 from sqlalchemy import or_
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sukusute_server import http_models, database_models, ml
 
@@ -386,12 +386,12 @@ async def push_csv(
             })
 
     if child_data_rows:
-        child_data_insert = sqlite_insert(database_models.SingleChildData).on_conflict_do_nothing(
+        child_data_insert = pg_insert(database_models.SingleChildData).on_conflict_do_nothing(
             index_elements=["child_id", "date", "steps"]
         )
         await dbsession.execute(child_data_insert, child_data_rows)
     if distance_data_rows:
-        distance_insert = sqlite_insert(database_models.ChildDistanceData).on_conflict_do_nothing(
+        distance_insert = pg_insert(database_models.ChildDistanceData).on_conflict_do_nothing(
             index_elements=["child_id_1", "child_id_2", "date"]
         )
         await dbsession.execute(distance_insert, distance_data_rows)
