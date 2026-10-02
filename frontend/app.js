@@ -314,9 +314,9 @@ async function openConfigModal() {
     document.getElementById('configBaselineMinMinutes').value = totalMinutes % 60;
     document.getElementById('configBaselineMaxDays').value = config.baseline_max_days;
     document.getElementById('configRelatednessMaxHistory').value = config.relatedness_max_history;
-    document.getElementById('menuPanel').classList.remove('is-open');
-    document.getElementById('modalLayer').classList.remove('is-hidden');
-    document.getElementById('configModal').classList.remove('is-hidden');
+    
+    closeMenu();
+    openModal('configModal');
 }
 
 // ログイン画面を表示し、認証が必要な画面を隠す。
