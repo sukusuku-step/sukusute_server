@@ -1244,6 +1244,7 @@ async def get_monthly_stats(
 # ===== MLコンフィグ =====
 
 class MLConfigUpdate(pydantic.BaseModel):
+    activity_max_data_minutes: int
     anomaly_threshold_percent: float
     baseline_min_data_minutes: int
     baseline_max_days: int
@@ -1257,6 +1258,8 @@ async def get_ml_config(
 
     return {
         "status": "ok",
+        "activity_max_data_minutes":
+            config["activity_max_data_minutes"],
         "anomaly_threshold_percent":
             config["anomaly_threshold_ratio"] * 100.0,
         "baseline_min_data_minutes":
@@ -1273,6 +1276,12 @@ async def update_ml_config(
     data: MLConfigUpdate,
     teacher: TeacherDep,
 ):
+    if data.activity_max_data_minutes < 1:
+        raise fastapi.HTTPException(
+            422,
+            "活動量推論に使用する過去データ時間が不正です"
+        )
+    
     if not 0 < data.anomaly_threshold_percent <= 1000:
         raise fastapi.HTTPException(
             422,
@@ -1298,12 +1307,11 @@ async def update_ml_config(
         )
 
     config = ml.update_ml_config(
-        anomaly_threshold_ratio=(
-            data.anomaly_threshold_percent / 100.0
-        ),
+        activity_max_data_minutes=data.activity_max_data_minutes,
+        anomaly_threshold_ratio=data.anomaly_threshold_percent / 100.0,
         baseline_min_data_minutes=data.baseline_min_data_minutes,
         baseline_max_days=data.baseline_max_days,
-        relatedness_max_history=data.relatedness_max_history,
+        relatedness_max_history=data.relatedness_max_history
     )
 
     return {

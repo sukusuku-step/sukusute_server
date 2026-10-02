@@ -303,18 +303,22 @@ function closeMenu() {
 
 async function openConfigModal() {
     setMessage('configMessage', '');
-
     const config = await apiRequest('/api/ml/config');
 
-    document.getElementById('configAnomalyThreshold').value = config.anomaly_threshold_percent;
+    const activityTotalMinutes = Number(config.activity_max_data_minutes) || 0;
+    document.getElementById('configActivityMaxHours').value = Math.floor(activityTotalMinutes / 60);
+    document.getElementById('configActivityMaxMinutes').value = activityTotalMinutes % 60;
 
+    document.getElementById('configAnomalyThreshold').value = config.anomaly_threshold_percent;
     const totalMinutes = Number(config.baseline_min_data_minutes) || 0;
 
     document.getElementById('configBaselineMinHours').value = Math.floor(totalMinutes / 60);
     document.getElementById('configBaselineMinMinutes').value = totalMinutes % 60;
+
     document.getElementById('configBaselineMaxDays').value = config.baseline_max_days;
+
     document.getElementById('configRelatednessMaxHistory').value = config.relatedness_max_history;
-    
+
     closeMenu();
     openModal('configModal');
 }
@@ -1374,21 +1378,28 @@ document.getElementById('configForm').addEventListener(
     'submit',
     async (event) => {
         event.preventDefault();
-
         setMessage('configMessage', '');
 
-        const hours = Number(
-            document.getElementById('configBaselineMinHours').value
-        );
+        const activityHours = Number(document.getElementById('configActivityMaxHours').value);
+        const activityMinutes = Number(document.getElementById('configActivityMaxMinutes').value);
+        const activityMaxDataMinutes = activityHours * 60 + activityMinutes;
 
-        const minutes = Number(
-            document.getElementById('configBaselineMinMinutes').value
-        );
-
-        const baselineMinDataMinutes =
-            hours * 60 + minutes;
+        if (activityMaxDataMinutes < 1) {
+            setMessage(
+                'configMessage',
+                '活動量推論に使用する過去データ量は1分以上にしてください。'
+            );
+            return;
+        }
+        
+        const hours = Number(document.getElementById('configBaselineMinHours').value);
+        const minutes = Number(document.getElementById('configBaselineMinMinutes').value);
+        const baselineMinDataMinutes = hours * 60 + minutes;
 
         const body = {
+            activity_max_data_minutes:
+                activityMaxDataMinutes,
+
             anomaly_threshold_percent: Number(
                 document.getElementById(
                     'configAnomalyThreshold'
