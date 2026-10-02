@@ -301,6 +301,11 @@ body {
 .student-card[data-palette="6"] { --nameplate-accent: var(--nameplate-coral); }
 .student-card[data-palette="7"] { --nameplate-accent: var(--nameplate-peach); }
 
+/* 横型表示では名札の色をバラバラにせず統一する。 */
+body:not(.square-mode) .student-card[data-palette] {
+    --nameplate-accent: var(--nameplate-blue);
+}
+
 .student-name {
     grid-column: 1;
     grid-row: 1;
