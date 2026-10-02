@@ -303,20 +303,24 @@ function closeMenu() {
 
 async function openConfigModal() {
     setMessage('configMessage', '');
-
     const config = await apiRequest('/api/ml/config');
 
-    document.getElementById('configAnomalyThreshold').value = config.anomaly_threshold_percent;
+    const activityTotalMinutes = Number(config.activity_max_data_minutes) || 0;
+    document.getElementById('configActivityMaxHours').value = Math.floor(activityTotalMinutes / 60);
+    document.getElementById('configActivityMaxMinutes').value = activityTotalMinutes % 60;
 
+    document.getElementById('configAnomalyThreshold').value = config.anomaly_threshold_percent;
     const totalMinutes = Number(config.baseline_min_data_minutes) || 0;
 
     document.getElementById('configBaselineMinHours').value = Math.floor(totalMinutes / 60);
     document.getElementById('configBaselineMinMinutes').value = totalMinutes % 60;
+
     document.getElementById('configBaselineMaxDays').value = config.baseline_max_days;
+
     document.getElementById('configRelatednessMaxHistory').value = config.relatedness_max_history;
-    document.getElementById('menuPanel').classList.remove('is-open');
-    document.getElementById('modalLayer').classList.remove('is-hidden');
-    document.getElementById('configModal').classList.remove('is-hidden');
+
+    closeMenu();
+    openModal('configModal');
 }
 
 // ログイン画面を表示し、認証が必要な画面を隠す。
@@ -859,6 +863,16 @@ async function openRelationModal() {
     }
 }
 
+function shortenNetworkName(name, maxLength = 7) {
+    const chars = [...String(name || '')];
+
+    if (chars.length <= maxLength) {
+        return chars.join('');
+    }
+
+    return `${chars.slice(0, maxLength).join('')}…`;
+}
+
 // 児童間の関係ネットワーク図を描画する。（重み付き無向グラフとして描画）
 function renderRelatedNetwork() {
     const container = document.getElementById('relatedNetworkGraph');
@@ -875,16 +889,39 @@ function renderRelatedNetwork() {
 
     const centerX = width / 2;
     const centerY = height / 2;
-    const radius = Math.min(width, height) * 0.42;
+
+    const radiusX = width * 0.43;
+    const radiusY = height * 0.39;
+
+    let nodeRadius = 34;
+    let nodeFontSize = 14;
+    let maxNameLength = 7;
+
+    if (children.length > 16) {
+        nodeRadius = 23;
+        nodeFontSize = 10;
+        maxNameLength = 5;
+    } else if (children.length > 12) {
+        nodeRadius = 26;
+        nodeFontSize = 11;
+        maxNameLength = 6;
+    } else if (children.length > 8) {
+        nodeRadius = 30;
+        nodeFontSize = 12;
+        maxNameLength = 6;
+    }
 
     const nodes = children.map((child, index) => {
         const angle = (Math.PI * 2 * index / children.length) - Math.PI / 2;
         return {
             ...child,
-            x: centerX + Math.cos(angle) * radius,
-            y: centerY + Math.sin(angle) * radius
+            x: centerX + Math.cos(angle) * radiusX,
+            y: centerY + Math.sin(angle) * radiusY
         };
     });
+
+    const denseGraph = nodes.length >= 13;
+    const veryDenseGraph = nodes.length >= 18;
 
     let edges = '';
 
@@ -904,22 +941,36 @@ function renderRelatedNetwork() {
 
             const normalizedScore = Math.max(0, Math.min(1, score));
 
+            // 人数が多い場合は最大線幅を抑える
+            const maxExtraWidth = veryDenseGraph ? 4 : denseGraph ? 6 : 12;
+
             // 線幅を決める
-            const strokeWidth = 1.5 + Math.pow(normalizedScore, 1.7) * 16;
+            const strokeWidth = 0.8 + Math.pow(normalizedScore, 1.7) * maxExtraWidth;
 
             // 線の色を決める
             const strokeColor = relationEdgeColor(normalizedScore);
+
+            const baseOpacity = veryDenseGraph ? 0.12 : denseGraph ? 0.18 : 0.3;
+
+            const opacityRange = veryDenseGraph ? 0.30 : denseGraph ? 0.42 : 0.6;
+
+            const edgeId = `network-edge-${node1.child_id}-${node2.child_id}`;
 
             edges += `
                 <!-- クリック判定専用：透明で太い線 -->
                 <line
                     class="network-edge-hit"
                     data-network-edge
+                    data-edge-id="${edgeId}"
+
                     data-child1="${node1.child_id}"
                     data-child2="${node2.child_id}"
+
                     data-name1="${escapeHtml(node1.name)}"
                     data-name2="${escapeHtml(node2.name)}"
+
                     data-score="${score}"
+
                     data-distance="${escapeHtml(relation.evaluated || '')}"
                     data-confidence="${relation.confidence ?? ''}"
 
@@ -935,13 +986,22 @@ function renderRelatedNetwork() {
                 <!-- 実際に見える線 -->
                 <line
                     class="network-edge"
+                    data-network-visible-edge
+                    data-edge-id="${edgeId}"
+
+                    data-child1="${node1.child_id}"
+                    data-child2="${node2.child_id}"
+
                     x1="${node1.x}"
                     y1="${node1.y}"
                     x2="${node2.x}"
                     y2="${node2.y}"
+
                     stroke="${strokeColor}"
                     stroke-width="${strokeWidth}"
-                    stroke-opacity="${0.35 + normalizedScore * 0.6}"
+
+                    stroke-opacity="${baseOpacity + normalizedScore * opacityRange}"
+                    
                     pointer-events="none"
                 />
             `;
@@ -1374,21 +1434,28 @@ document.getElementById('configForm').addEventListener(
     'submit',
     async (event) => {
         event.preventDefault();
-
         setMessage('configMessage', '');
 
-        const hours = Number(
-            document.getElementById('configBaselineMinHours').value
-        );
+        const activityHours = Number(document.getElementById('configActivityMaxHours').value);
+        const activityMinutes = Number(document.getElementById('configActivityMaxMinutes').value);
+        const activityMaxDataMinutes = activityHours * 60 + activityMinutes;
 
-        const minutes = Number(
-            document.getElementById('configBaselineMinMinutes').value
-        );
+        if (activityMaxDataMinutes < 1) {
+            setMessage(
+                'configMessage',
+                '活動量推論に使用する過去データ量は1分以上にしてください。'
+            );
+            return;
+        }
 
-        const baselineMinDataMinutes =
-            hours * 60 + minutes;
+        const hours = Number(document.getElementById('configBaselineMinHours').value);
+        const minutes = Number(document.getElementById('configBaselineMinMinutes').value);
+        const baselineMinDataMinutes = hours * 60 + minutes;
 
         const body = {
+            activity_max_data_minutes:
+                activityMaxDataMinutes,
+
             anomaly_threshold_percent: Number(
                 document.getElementById(
                     'configAnomalyThreshold'

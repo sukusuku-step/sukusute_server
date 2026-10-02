@@ -14,6 +14,9 @@ import sukusute_server.database_models
 
 # サーバを再起動すると以下のデフォルト値に戻る
 
+# activity_inferへ渡す過去データ量の上限（単位: 分）
+ACTIVITY_MAX_DATA_MINUTES = 60
+
 # 何%ベースラインから外れたら異常値とみなすか（例: 0.50 = 50%）
 ANOMALY_THRESHOLD_RATIO = 0.50
 
@@ -32,6 +35,7 @@ latest_anomaly_results: dict[int, dict] = {}
 
 def get_ml_config() -> dict:
     return {
+        "activity_max_data_minutes": ACTIVITY_MAX_DATA_MINUTES,
         "anomaly_threshold_ratio": ANOMALY_THRESHOLD_RATIO,
         "baseline_min_data_minutes": BASELINE_MIN_DATA_MINUTES,
         "baseline_max_days": BASELINE_MAX_DAYS,
@@ -39,16 +43,19 @@ def get_ml_config() -> dict:
     }
 
 def update_ml_config(
+    activity_max_data_minutes: int,
     anomaly_threshold_ratio: float,
     baseline_min_data_minutes: int,
     baseline_max_days: int,
     relatedness_max_history: int
 ) -> dict:
+    global ACTIVITY_MAX_DATA_MINUTES
     global ANOMALY_THRESHOLD_RATIO
     global BASELINE_MIN_DATA_MINUTES
     global BASELINE_MAX_DAYS
     global RELATEDNESS_MAX_HISTORY
 
+    ACTIVITY_MAX_DATA_MINUTES = activity_max_data_minutes
     ANOMALY_THRESHOLD_RATIO = anomaly_threshold_ratio
     BASELINE_MIN_DATA_MINUTES = baseline_min_data_minutes
     BASELINE_MAX_DAYS = baseline_max_days
@@ -182,18 +189,18 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     behavior_result = sukusute_machine_learning.inference.predict_behavior.behavior_infer(behavior_input)
     del behavior_input, single_records_10min
 
-    # activity_inferへの入力形式を作成（1時間までの取れる分の過去データ）
-    single_records_1h = [record for record in single_records if record.date > datetime.datetime.now() - datetime.timedelta(hours=1)]
+    # activity_inferへの入力形式を作成（ACTIVITY_MAX_DATA_MINUTESが上限の取れる分の過去データ）
+    activity_records = [record for record in single_records if record.date > datetime.datetime.now() - datetime.timedelta(minutes=ACTIVITY_MAX_DATA_MINUTES)]
     activity_input = np.fromiter(((
         record.steps,
         record.ax, record.ay, record.az,
         record.gx, record.gy, record.gz,
         record.mx, record.my, record.mz
-    ) for record in single_records_1h), dtype=(np.float32, 10))
+    ) for record in activity_records), dtype=(np.float32, 10))
 
-    # 直近1時間の歩数・加速度の計測データから活動量の値を推定
+    # ACTIVITY_MAX_DATA_MINUTESの分の歩数・加速度の計測データから活動量の値を推定
     activity_result = sukusute_machine_learning.inference.predict_behavior.activity_infer(activity_input)
-    del activity_input, single_records_1h
+    del activity_input, activity_records
 
     # build_baselineに利用するデータは最大BASELINE_MAX_DAYS日分に制限
     baseline_cutoff = datetime.datetime.now() - datetime.timedelta(
