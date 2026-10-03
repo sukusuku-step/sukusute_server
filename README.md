@@ -15,6 +15,9 @@ CREATE DATABASE sukusute OWNER sukusute;
 ```
 
 ```sh
+// sukusute-machine-learning の feat/cnn_lstm ブランチの変更を反映
+uv lock --upgrade-package sukusute-machine-learning
+
 uv sync
 uv run alembic upgrade head
 uv run python -m sukusute_server
