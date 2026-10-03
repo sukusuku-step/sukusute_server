@@ -219,7 +219,7 @@ class ChildBehaviorAcceEnum(enum.Enum):
     STANDING = "立ち状態"
 
 class ChildBehaviorDataEvaluationHistory(Base):
-    __tablename__ = "behaivor_evalhist"
+    __tablename__ = "behavior_evalhist"
 
     child_id: Mapped[int] = mapped_column(
         ForeignKey("child.child_id"),

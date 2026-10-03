@@ -32,6 +32,7 @@ def upgrade() -> None:
     sa.CheckConstraint('CAST(_ AS INTEGER) = 1', name='no_multiple_config'),
     sa.PrimaryKeyConstraint('_')
     )
+    op.rename_table("behaivor_evalhist", "behavior_evalhist")
     # ### end Alembic commands ###
 
 
