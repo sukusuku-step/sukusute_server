@@ -219,7 +219,7 @@ class ChildBehaviorAcceEnum(enum.Enum):
     STANDING = "立ち状態"
 
 class ChildBehaviorDataEvaluationHistory(Base):
-    __tablename__ = "behaivor_evalhist"
+    __tablename__ = "behavior_evalhist"
 
     child_id: Mapped[int] = mapped_column(
         ForeignKey("child.child_id"),
@@ -255,3 +255,20 @@ class Teacher(Base):
     username: Mapped[str] = mapped_column(primary_key=True)
     pw_hash: Mapped[bytes]
     name: Mapped[str]
+
+# ===== 設定 =====
+class Settings(Base):
+    """ 設定情報を管理するテーブル """
+    __tablename__ = "settings"
+    __table_args__ = (
+        CheckConstraint("_ = 1", name="no_multiple_config"),
+    )
+
+    _: Mapped[bool] = mapped_column(primary_key=True, default=1)
+    activity_max_data_minutes: Mapped[int]
+    anomaly_threshold_ratio: Mapped[float]
+    baseline_min_data_minutes: Mapped[int]
+    baseline_max_days: Mapped[int]
+    relatedness_max_history: Mapped[int]
+    relatedness_max_steps_minutes: Mapped[int]
+
