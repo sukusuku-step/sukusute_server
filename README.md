@@ -1,6 +1,6 @@
 # すくすてサーバ（prototype）
 
-児童の歩数と児童間の距離を受信・集計するFastAPIサーバです。開発環境ではSQLite（`data.sqlite`）を使います。
+児童の歩数と児童間の距離を受信・集計するFastAPIサーバです。データ保存にはPostgreSQLを使用します。
 
 ## 必要な環境
 
@@ -8,6 +8,11 @@
 - [uv](https://docs.astral.sh/uv/)（依存関係と実行に使用）
 
 ## セットアップと起動
+実行環境にPostgreSQLをインストールし、以下のクエリを実行してデータベースを作成してください。
+```sql
+CREATE USER sukusute WITH LOGIN PASSWORD 'sukusute';
+CREATE DATABASE sukusute OWNER sukusute;
+```
 
 ```sh
 uv sync
@@ -42,19 +47,11 @@ uv run python db_utils/simulate_nametags.py --count 30 --interval 10
 VPS上で次を実行します。
 
 ```sh
-uv sync
 uv run alembic upgrade head
 SUKUSUTE_HOST=0.0.0.0 SUKUSUTE_PORT=3000 uv run python -m sukusute_server
 ```
 
-既存のVPSで `no such table: school_class` が表示される場合は、アプリを停止してから、プロジェクトディレクトリでマイグレーションを実行してください。DBは実行時のカレントディレクトリではなく、プロジェクトルートの `data.sqlite` を使用します。
-
-```sh
-cd /home/ubuntu/sukusute
-uv run alembic upgrade head
-SUKUSUTE_HOST=0.0.0.0 SUKUSUTE_PORT=3000 uv run python -m sukusute_server
-```
-
+pull後にデータベースエラー(sqlalchemyなど)が発生した場合、マイグレーションを実施してください。  
 外部から接続できない場合は、VPSのファイアウォールでも3000番ポートを許可してください。`ufw` を使う環境では次のように設定します。
 
 ```sh
@@ -67,12 +64,6 @@ sudo ufw allow 3000/tcp
 - APIドキュメント: `http://49.212.151.94:3000/docs`
 - ヘルスチェック: `http://49.212.151.94:3000/api/health`
 
-ホスト名やポートを変更する場合は、環境変数を指定できます。
-
-```sh
-SUKUSUTE_HOST=0.0.0.0 SUKUSUTE_PORT=3000 uv run python -m sukusute_server
-```
-
 ### マイグレーション
 
 既存DBを最新スキーマに更新する場合、またはDBを新規作成する場合:
@@ -84,7 +75,7 @@ uv run alembic upgrade head
 テーブル定義を変更して新しいリビジョンを作る場合:
 
 ```sh
-uv run alembic revision --autogenerate -m "変更内容"
+uv run alembic revision --autogenerate
 ```
 
 ## API共通仕様
