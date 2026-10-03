@@ -407,13 +407,13 @@ uv run python dummy_data_sender.py
 
 ```sh
 # 一覧表示
-uv run python delete_children.py list
+uv run python db_utils/delete_children.py list
 
 # すべての児童と関連データを削除
-uv run python delete_children.py delete_all
+uv run python db_utils/delete_children.py delete_all
 
 # 指定した児童と関連データを削除
-uv run python delete_children.py delete <child_id>
+uv run python db_utils/delete_children.py delete <child_id>
 ```
 
 ## データモデル
