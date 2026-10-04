@@ -722,7 +722,6 @@ function renderStudents() {
 
                 return `
                     <div class="relation-score-row${staleClass(relationIsStale)}">
-                    ${relationIsStale ? `<small class="stale-value-note">10分以上更新なし</small>`: ''}
                         <strong>${escapeHtml(other.name || `子ども${other.child_id}`)}</strong>
                         <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                         <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
@@ -736,7 +735,7 @@ function renderStudents() {
                 <article class="warning-item" role="alert">
                     <strong>⚠ 普段と異なる状態を検出しました</strong>
                     <span>
-                        直近の10分間でのデータがベースラインから
+                        直近の10分間でのデータが普段の値から
                         ${formatMlNumber(anomaly.threshold_percent, 1)}%以上外れています。    
                     </span>
                     <small>${anomalyWarnings.map(([feature, comparison]) =>
@@ -748,7 +747,6 @@ function renderStudents() {
                 <h3>最新のステータス</h3>
                 ${behavior ? `
                     <div class="ml-result-grid${staleClass(behaviorIsStale)}" ${behaviorIsStale ? 'title="推論結果が10分以上更新されていません"' : ''}>
-                    ${behaviorIsStale ? `<span class="stale-value-note ml-stale-note"> 10分以上更新なし </span>` : ''}
                         <span>姿勢状態</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}での推論</small>
                         <span>走行状態</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}での推論</small>
                         <span>活動量</span><strong>${escapeHtml(behavior.activity_level)} / 5</strong><small>${formatConfidence(behavior.activity_confidence)}での推論</small>
@@ -764,7 +762,6 @@ function renderStudents() {
                 <summary>この子の普段のステータス（基準値）</summary>
                 ${behavior ? `
                     <div class="baseline-grid ${staleClass(behaviorIsStale)}">
-                    ${behaviorIsStale ? `<span class="stale-value-note baseline-stale-note"> 10分以上更新なし </span>` : ''}
                         <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / ばらつき ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
                         <span>活動量</span><span>中央値 ${formatMlNumber(behavior.baseline_activity_mean_proxy_median)} / ばらつき ${formatMlNumber(behavior.baseline_activity_mean_proxy_mad_scale)}</span>
                         <span>加速度</span><span>中央値 ${formatMlNumber(behavior.baseline_acc_std_median)} / ばらつき ${formatMlNumber(behavior.baseline_acc_std_mad_scale)}</span>
@@ -1022,7 +1019,6 @@ function renderRelationSummary() {
 
             rows.push(`
                 <div class="relation-pair${staleClass(relationIsStale)}">
-                    ${relationIsStale ? `<span class="stale-value-note"> 10分以上更新なし </span>` : ''}
                     <strong>${escapeHtml(child1.name)} ↔ ${escapeHtml(child2.name)}</strong>
                     <span>距離状態: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                     <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
