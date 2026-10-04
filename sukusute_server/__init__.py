@@ -36,6 +36,8 @@ STEP_WARNING_RATIO = 0.5
 app = fastapi.FastAPI()
 sessions: dict[str, str] = {}
 device_statuses: dict[int, http_models.DeviceStatus] = {}
+sensor_data_received_at: dict[int, datetime.datetime] = {}
+distance_data_received_at: dict[int, datetime.datetime] = {}
 
 # フロントで「サーバ起動後に更新されたか」を判定するための基準時刻。
 SERVER_STARTED_AT = datetime.datetime.now()
@@ -347,80 +349,59 @@ async def list_device_statuses() -> http_models.DeviceStatusListResponse:
 
 @app.get("/api/data_freshness", tags=["API"])
 async def get_data_freshness(dbsession: database_models.SessionDep):
-    latest_child_data_rows = (
+    latest_ml_evaluation = (
+        sqlalchemy.select(
+            database_models.ChildBehaviorDataEvaluationHistory.child_id.label("child_id"),
+            sqlalchemy.func.max(
+                database_models.ChildBehaviorDataEvaluationHistory.date
+            ).label("latest_evaluation_date"),
+        )
+        .group_by(
+            database_models.ChildBehaviorDataEvaluationHistory.child_id
+        )
+        .subquery()
+    )
+
+    progress_rows = (
         await dbsession.execute(
             sqlalchemy.select(
                 database_models.SingleChildData.child_id,
-                sqlalchemy.func.max(
-                    database_models.SingleChildData.date
-                ).label("latest_date"),
+                sqlalchemy.func.count().label("received_rows"),
             )
-            .group_by(
-                database_models.SingleChildData.child_id
+            .outerjoin(
+                latest_ml_evaluation,
+                latest_ml_evaluation.c.child_id == database_models.SingleChildData.child_id,
             )
+            .where(
+                sqlalchemy.or_(
+                    latest_ml_evaluation.c.latest_evaluation_date.is_(None),
+                    database_models.SingleChildData.date > latest_ml_evaluation.c.latest_evaluation_date,
+                )
+            )
+            .group_by(database_models.SingleChildData.child_id)
         )
     ).all()
 
+    ml_progress = {}
+    for child_id, received_rows in progress_rows:
+        received_rows = min(int(received_rows or 0), 6000)
+        ml_progress[str(child_id)] = {
+            "received_rows": received_rows,
+            "required_rows": 6000,
+            "received_seconds": received_rows / 10.0,
+            "required_seconds": 600.0,
+        }
+    
     latest_child_data = {
-        str(child_id): latest_date.isoformat()
-        for child_id, latest_date
-        in latest_child_data_rows
-        if latest_date is not None
+        str(child_id): received_at.isoformat()
+        for child_id, received_at
+        in sensor_data_received_at.items()
     }
 
-    child1_latest = (
-        sqlalchemy.select(
-            database_models.ChildDistanceData.child_id_1.label(
-                "child_id"
-            ),
-            sqlalchemy.func.max(
-                database_models.ChildDistanceData.date
-            ).label("latest_date"),
-        )
-        .group_by(
-            database_models.ChildDistanceData.child_id_1
-        )
-    )
-
-    child2_latest = (
-        sqlalchemy.select(
-            database_models.ChildDistanceData.child_id_2.label(
-                "child_id"
-            ),
-            sqlalchemy.func.max(
-                database_models.ChildDistanceData.date
-            ).label("latest_date"),
-        )
-        .group_by(
-            database_models.ChildDistanceData.child_id_2
-        )
-    )
-
-    distance_union = (
-        child1_latest.union_all(
-            child2_latest
-        ).subquery()
-    )
-
-    latest_distance_rows = (
-        await dbsession.execute(
-            sqlalchemy.select(
-                distance_union.c.child_id,
-                sqlalchemy.func.max(
-                    distance_union.c.latest_date
-                ),
-            )
-            .group_by(
-                distance_union.c.child_id
-            )
-        )
-    ).all()
-
     latest_distance_data = {
-        str(child_id): latest_date.isoformat()
-        for child_id, latest_date
-        in latest_distance_rows
-        if latest_date is not None
+        str(child_id): received_at.isoformat()
+        for child_id, received_at
+        in distance_data_received_at.items()
     }
 
     return {
@@ -428,6 +409,7 @@ async def get_data_freshness(dbsession: database_models.SessionDep):
         "server_started_at": SERVER_STARTED_AT.isoformat(),
         "child_data": latest_child_data,
         "child_distance": latest_distance_data,
+        "ml_progress": ml_progress,
     }
 
 @app.post("/api/push_csv/{child_id}", tags=["API"])
@@ -484,6 +466,20 @@ async def push_csv(
         )
         await dbsession.execute(distance_insert, distance_data_rows)
     await dbsession.commit()
+
+    received_at = datetime.datetime.now()
+    if child_data_rows:
+        sensor_data_received_at[child_id] = received_at
+    if distance_data_rows:
+        distance_child_ids = {
+            row["child_id_1"]
+            for row in distance_data_rows
+        } | {
+            row["child_id_2"]
+            for row in distance_data_rows
+        }
+        for distance_child_id in distance_child_ids:
+            distance_data_received_at[distance_child_id] = received_at
 
     # 機械学習のバックグラウンドタスクを作成する（api/push_csvのAPIがM5側で叩かれる度に作成される）
     background_tasks.add_task(ml.evaluate_data, dbsession, child_id, parsed_distance_children)
