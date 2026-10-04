@@ -817,33 +817,48 @@ async def get_today_stats(
     )
 
     # 全児童のその日の歩数データ（累計と1分間の増加ランキングに使用）
-    all_step_data = (await dbsession.execute(
+    latest_step_dates = (await dbsession.execute(
         sqlalchemy.select(
             database_models.SingleChildData.child_id,
-            database_models.Child.name,
-            database_models.SingleChildData.steps,
-            database_models.SingleChildData.date
-        )
-        .join(
-            database_models.Child,
-            database_models.SingleChildData.child_id == database_models.Child.child_id
+            sqlalchemy.func.max(database_models.SingleChildData.date)
         )
         .where(
             database_models.SingleChildData.date >= start_date,
             database_models.SingleChildData.date <= end_date
         )
-        .order_by(
-            database_models.SingleChildData.child_id,
-            database_models.SingleChildData.date.desc()
-        )
+        .group_by(database_models.SingleChildData.child_id)
     )).all()
 
+    if latest_step_dates:
+        step_windows = [
+            sqlalchemy.and_(
+                database_models.SingleChildData.child_id == child_id,
+                database_models.SingleChildData.date >= latest_date - datetime.timedelta(seconds=90),
+                database_models.SingleChildData.date <= latest_date
+            )
+            for child_id, latest_date in latest_step_dates
+        ]
+        all_step_data = (await dbsession.execute(
+            sqlalchemy.select(
+                database_models.SingleChildData.child_id,
+                database_models.Child.name,
+                database_models.SingleChildData.steps,
+                database_models.SingleChildData.date
+            )
+            .join(
+                database_models.Child,
+                database_models.SingleChildData.child_id == database_models.Child.child_id
+            )
+            .where(sqlalchemy.or_(*step_windows))
+            .order_by(
+                database_models.SingleChildData.child_id,
+                database_models.SingleChildData.date.desc()
+            )
+        )).all()
+    else:
+        all_step_data = []
+
     logger.info(f"get_today_stats: all_step_data count={len(all_step_data)}")
-    for child_id, name, steps_val, date_val in all_step_data:
-        logger.info(
-            f"  child_id={child_id}, name={name}, "
-            f"steps={steps_val}, date={date_val}"
-        )
 
     # child_idごとに最新のデータのみを抽出
     student_steps = {}
@@ -894,15 +909,13 @@ async def get_today_stats(
     prev_start = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 0, 0, 0)
     prev_end = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 23, 59, 59)
 
-    prev_step_data = (await dbsession.execute(
-        sqlalchemy.select(database_models.SingleChildData)
+    prev_total_steps = (await dbsession.scalar(
+        sqlalchemy.select(sqlalchemy.func.sum(database_models.SingleChildData.steps))
         .where(
             database_models.SingleChildData.date >= prev_start,
             database_models.SingleChildData.date <= prev_end
         )
-    )).scalars().all()
-
-    prev_total_steps = sum(d.steps for d in prev_step_data)
+    )) or 0
     step_change = total_steps - prev_total_steps if prev_total_steps > 0 else 0
     step_change_percent = (
         ((total_steps - prev_total_steps) / prev_total_steps * 100)
@@ -912,21 +925,25 @@ async def get_today_stats(
 
     # 歩数が普段より少ない児童を検出（警告）
     warnings = []
+    week_start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=7)
+    weekly_stats = {
+        child_id: (record_count, total_week_steps)
+        for child_id, record_count, total_week_steps in (await dbsession.execute(
+            sqlalchemy.select(
+                database_models.SingleChildData.child_id,
+                sqlalchemy.func.count(),
+                sqlalchemy.func.sum(database_models.SingleChildData.steps)
+            )
+            .where(database_models.SingleChildData.date >= week_start)
+            .group_by(database_models.SingleChildData.child_id)
+        )).all()
+    }
     for child_id_val, (name, steps_val, date_val) in latest_step_records.items():
         # この児童の過去7日間の平均を計算
-        week_start = datetime.datetime.now().replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ) - datetime.timedelta(days=7)
-        week_data = (await dbsession.execute(
-            sqlalchemy.select(database_models.SingleChildData)
-            .where(
-                database_models.SingleChildData.child_id == child_id_val,
-                database_models.SingleChildData.date >= week_start
-            )
-        )).scalars().all()
+        record_count, total_week_steps = weekly_stats.get(child_id_val, (0, 0))
 
-        if len(week_data) >= 3:
-            avg_weekly = sum(d.steps for d in week_data) / len(week_data)
+        if record_count >= 3:
+            avg_weekly = total_week_steps / record_count
             if avg_weekly > 0 and steps_val < avg_weekly * STEP_WARNING_RATIO:
                 warnings.append(http_models.StepWarning(
                     child_id=child_id_val,

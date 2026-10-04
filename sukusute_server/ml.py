@@ -1,4 +1,5 @@
 import datetime
+import asyncio
 import numpy as np
 from sqlalchemy import and_, or_, select, func
 
@@ -18,10 +19,10 @@ import sukusute_server.database_models
 ACTIVITY_MAX_DATA_MINUTES = 60
 
 # 何%ベースラインから外れたら異常値とみなすか（例: 0.50 = 50%）
-ANOMALY_THRESHOLD_RATIO = 0.50
+ANOMALY_THRESHOLD_RATIO = 0.10
 
 # build_baselineを実行するために最低限必要な過去データ量（単位: 分）
-BASELINE_MIN_DATA_MINUTES = 1440
+BASELINE_MIN_DATA_MINUTES = 5
 
 # build_baselineへ渡すデータは最大で過去何日分までか
 BASELINE_MAX_DAYS = 14
@@ -29,9 +30,17 @@ BASELINE_MAX_DAYS = 14
 # calc_relatednessへ渡す過去の相対距離の推論結果の最大件数
 RELATEDNESS_MAX_HISTORY = 100
 
+# calc_relatednessへ渡すデータは最大で過去何日分までか
+RELATEDNESS_MAX_STEPS_MINUTES = 14
+
 ANOMALY_EPS = 1e-6
 
 latest_anomaly_results: dict[int, dict] = {}
+ml_inference_semaphore = asyncio.Semaphore(1)
+
+async def run_ml_inference(function, *args):
+    async with ml_inference_semaphore:
+        return await asyncio.to_thread(function, *args)
 
 def get_ml_config() -> dict:
     return {
@@ -147,7 +156,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     # 10秒毎でこのml.pyのバッググランドタスクは呼ばれる
     # 10分単位のデータに対する実行のための（児童ごとに見て）10分以下のスパンでの再実行は早期returnする
     if await dbsession.scalar(
-        select(func.count())
+        select(1)
         .select_from(
             sukusute_server.database_models.ChildBehaviorDataEvaluationHistory
         )
@@ -155,15 +164,22 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
             sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id,
             sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.date >= datetime.datetime.now() - datetime.timedelta(minutes=10)
         )
+        .limit(1)
     ):
         await evaluate_distance_data(dbsession, child_id, distance_child_ids)
         await dbsession.commit()
         return
 
     # ある1人の児童の計測データ（歩数・加速度）を取得
+    query_cutoff = min(
+        datetime.datetime.now() - datetime.timedelta(minutes=11),
+        datetime.datetime.now() - datetime.timedelta(minutes=ACTIVITY_MAX_DATA_MINUTES),
+        datetime.datetime.now() - datetime.timedelta(days=BASELINE_MAX_DAYS),
+    )
     single_stmt = select(sukusute_server.database_models.SingleChildData) \
                     .where(
                         sukusute_server.database_models.SingleChildData.child_id == child_id,
+                        sukusute_server.database_models.SingleChildData.date >= query_cutoff,
                     ) \
                     .order_by(sukusute_server.database_models.SingleChildData.date.asc())
     single_records = (await dbsession.execute(single_stmt)).scalars().all()
@@ -186,7 +202,10 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     ) for record in single_records_10min), dtype=(np.float32, 10))
 
     # 直近10分間の歩数・加速度の計測データから分類ラベルを推定
-    behavior_result = sukusute_machine_learning.inference.predict_behavior.behavior_infer(behavior_input)
+    behavior_result = await run_ml_inference(
+        sukusute_machine_learning.inference.predict_behavior.behavior_infer,
+        behavior_input
+    )
     del behavior_input, single_records_10min
 
     # activity_inferへの入力形式を作成（ACTIVITY_MAX_DATA_MINUTESが上限の取れる分の過去データ）
@@ -199,7 +218,10 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
     ) for record in activity_records), dtype=(np.float32, 10))
 
     # ACTIVITY_MAX_DATA_MINUTESの分の歩数・加速度の計測データから活動量の値を推定
-    activity_result = sukusute_machine_learning.inference.predict_behavior.activity_infer(activity_input)
+    activity_result = await run_ml_inference(
+        sukusute_machine_learning.inference.predict_behavior.activity_infer,
+        activity_input
+    )
     del activity_input, activity_records
 
     # build_baselineに利用するデータは最大BASELINE_MAX_DAYS日分に制限
@@ -223,11 +245,12 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
 
     # 算出したベースライン（medianとmad_scale）を取得
     try:
-        baseline_result = sukusute_machine_learning.utils.baseline.build_baseline(
+        baseline_result = (await run_ml_inference(
+            sukusute_machine_learning.utils.baseline.build_baseline,
             baseline_input,
             # 何時間分の過去データがベースライン算出に最低必要かを設定
             BASELINE_MIN_DATA_MINUTES / 60 # 時間単位にしてから関数には渡す
-        )["features"]
+        ))["features"]
     except (ValueError, TypeError):
         baseline_result = None
 
@@ -279,19 +302,6 @@ async def evaluate_distance_data(
     if not distance_child_ids:
         return
 
-    distance_stmt = select(
-        sukusute_server.database_models.ChildDistanceData
-    ) \
-        .where(or_(
-            sukusute_server.database_models.ChildDistanceData.child_id_1 == child_id,
-            sukusute_server.database_models.ChildDistanceData.child_id_2 == child_id
-        )) \
-        .order_by(sukusute_server.database_models.ChildDistanceData.date.asc())
-    
-    distance_records = (await dbsession.execute(distance_stmt)).scalars().all()
-    cutoff = datetime.datetime.now() - datetime.timedelta(minutes=11)
-    distance_records_10min = [record for record in distance_records if record.date > cutoff]
-
     recent_evaluations = (await dbsession.execute(
         select(
             sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1,
@@ -306,20 +316,49 @@ async def evaluate_distance_data(
     )).all()
     recent_pairs = {(row[0], row[1]) for row in recent_evaluations}
 
-    for other_child_id in set(distance_child_ids):
-        pair = (min(child_id, other_child_id), max(child_id, other_child_id))
-        if pair in recent_pairs:
-            continue
+    pending_pairs = [
+        (min(child_id, other_child_id), max(child_id, other_child_id))
+        for other_child_id in set(distance_child_ids)
+        if (min(child_id, other_child_id), max(child_id, other_child_id)) not in recent_pairs
+    ]
+    if not pending_pairs:
+        return
 
-        if child_id > other_child_id:
-            pair_records = [record for record in distance_records_10min if record.child_id_1 == other_child_id][:6000]
-        else:
-            pair_records = [record for record in distance_records_10min if record.child_id_2 == other_child_id][:6000]
+    cutoff = datetime.datetime.now() - datetime.timedelta(minutes=11)
+    pair_filters = [
+        and_(
+            sukusute_server.database_models.ChildDistanceData.child_id_1 == pair[0],
+            sukusute_server.database_models.ChildDistanceData.child_id_2 == pair[1]
+        )
+        for pair in pending_pairs
+    ]
+    distance_stmt = select(
+        sukusute_server.database_models.ChildDistanceData
+    ) \
+        .where(
+            sukusute_server.database_models.ChildDistanceData.date > cutoff,
+            or_(*pair_filters)
+        ) \
+        .order_by(sukusute_server.database_models.ChildDistanceData.date.asc())
+
+    distance_records_10min = (await dbsession.execute(distance_stmt)).scalars().all()
+    records_by_pair: dict[tuple[int, int], list] = {pair: [] for pair in pending_pairs}
+    for record in distance_records_10min:
+        pair = (record.child_id_1, record.child_id_2)
+        pair_records = records_by_pair.get(pair)
+        if pair_records is not None and len(pair_records) < 6000:
+            pair_records.append(record)
+
+    for pair in pending_pairs:
+        pair_records = records_by_pair[pair]
         if len(pair_records) < 6000:
             continue
 
         distance_input = np.fromiter((record.distance for record in pair_records), dtype=np.float32)
-        distance_result = sukusute_machine_learning.inference.predict_distance.distance_infer(distance_input)
+        distance_result = await run_ml_inference(
+            sukusute_machine_learning.inference.predict_distance.distance_infer,
+            distance_input
+        )
 
         history_stmt = select(
             sukusute_server.database_models.ChildDistanceEvaluationHistory.evaluated
@@ -334,7 +373,10 @@ async def evaluate_distance_data(
             .limit(RELATEDNESS_MAX_HISTORY) # 関連度スコア計算に用いる過去の推論結果の最大件数を設定（最新のN件）
         
         history = (await dbsession.execute(history_stmt)).scalars().all()
-        relatedness_result = sukusute_machine_learning.utils.relatedness.calc_relatedness(history)
+        relatedness_result = await run_ml_inference(
+            sukusute_machine_learning.utils.relatedness.calc_relatedness,
+            history
+        )
 
         dbsession.add(sukusute_server.database_models.ChildDistanceEvaluationHistory(
             child_id_1=pair[0],
