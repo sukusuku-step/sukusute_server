@@ -36,8 +36,11 @@ STEP_WARNING_RATIO = 0.5
 app = fastapi.FastAPI()
 sessions: dict[str, str] = {}
 device_statuses: dict[int, http_models.DeviceStatus] = {}
-bearer = HTTPBearer(auto_error=False)
 
+# フロントで「サーバ起動後に更新されたか」を判定するための基準時刻。
+SERVER_STARTED_AT = datetime.datetime.now()
+
+bearer = HTTPBearer(auto_error=False)
 
 def migrate_database() -> None:
     """プロジェクトルートのSQLiteへ、Alembicの最新スキーマを適用する。"""
@@ -341,6 +344,91 @@ async def list_device_statuses() -> http_models.DeviceStatusListResponse:
     )
 
 # ===== センサーデータCSV受信 =====
+
+@app.get("/api/data_freshness", tags=["API"])
+async def get_data_freshness(dbsession: database_models.SessionDep):
+    latest_child_data_rows = (
+        await dbsession.execute(
+            sqlalchemy.select(
+                database_models.SingleChildData.child_id,
+                sqlalchemy.func.max(
+                    database_models.SingleChildData.date
+                ).label("latest_date"),
+            )
+            .group_by(
+                database_models.SingleChildData.child_id
+            )
+        )
+    ).all()
+
+    latest_child_data = {
+        str(child_id): latest_date.isoformat()
+        for child_id, latest_date
+        in latest_child_data_rows
+        if latest_date is not None
+    }
+
+    child1_latest = (
+        sqlalchemy.select(
+            database_models.ChildDistanceData.child_id_1.label(
+                "child_id"
+            ),
+            sqlalchemy.func.max(
+                database_models.ChildDistanceData.date
+            ).label("latest_date"),
+        )
+        .group_by(
+            database_models.ChildDistanceData.child_id_1
+        )
+    )
+
+    child2_latest = (
+        sqlalchemy.select(
+            database_models.ChildDistanceData.child_id_2.label(
+                "child_id"
+            ),
+            sqlalchemy.func.max(
+                database_models.ChildDistanceData.date
+            ).label("latest_date"),
+        )
+        .group_by(
+            database_models.ChildDistanceData.child_id_2
+        )
+    )
+
+    distance_union = (
+        child1_latest.union_all(
+            child2_latest
+        ).subquery()
+    )
+
+    latest_distance_rows = (
+        await dbsession.execute(
+            sqlalchemy.select(
+                distance_union.c.child_id,
+                sqlalchemy.func.max(
+                    distance_union.c.latest_date
+                ),
+            )
+            .group_by(
+                distance_union.c.child_id
+            )
+        )
+    ).all()
+
+    latest_distance_data = {
+        str(child_id): latest_date.isoformat()
+        for child_id, latest_date
+        in latest_distance_rows
+        if latest_date is not None
+    }
+
+    return {
+        "status": "ok",
+        "server_started_at": SERVER_STARTED_AT.isoformat(),
+        "child_data": latest_child_data,
+        "child_distance": latest_distance_data,
+    }
 
 @app.post("/api/push_csv/{child_id}", tags=["API"])
 async def push_csv(
