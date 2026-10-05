@@ -32,6 +32,7 @@ async def send_notification(dbsession: sukusute_server.database_models.SessionDe
         await asyncio.to_thread(pywebpush.webpush,
             subscription_info=subscription.subscription_info,
             data=msg,
-            vapid_private_key=pywebpush.Vapid(private_key=key)
+            vapid_private_key=pywebpush.Vapid(private_key=key),
+            vapid_claims={"sub": "mailto:okaits@okaits7534.net"} # 何らかのメールアドレスを指定する必要があるので、とりあえずこれで……
         )
 
