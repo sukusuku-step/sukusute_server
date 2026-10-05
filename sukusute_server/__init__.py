@@ -12,6 +12,7 @@ import asyncio
 import csv
 import io
 import pydantic
+import contextlib
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from sukusute_server import http_models, database_models, ml
+from sukusute_server import http_models, database_models, ml, push_notify
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,24 @@ CALORIES_PER_STEP = 0.008
 DAILY_STEP_GOAL = 10000
 STEP_WARNING_RATIO = 0.5
 
-app = fastapi.FastAPI()
+async def notifier():
+    already_warned: set[int] = set()
+    while True:
+        await asyncio.sleep(60)
+        async with database_models.AsyncSession(database_models.engine) as dbsession:
+            warnings = (await get_today_stats(dbsession)).warnings
+            for warning in warnings:
+                if warning.child_id not in already_warned:
+                    already_warned.add(warning.child_id)
+                    await push_notify.send_notification(dbsession, f"歩数警告が発生しました: {warning.name}")
+
+@contextlib.asynccontextmanager
+async def lifespan(_):
+    asyncio.create_task(notifier())
+    yield
+
+app = fastapi.FastAPI(lifespan=lifespan)
+
 sessions: dict[str, str] = {}
 device_statuses: dict[int, http_models.DeviceStatus] = {}
 bearer = HTTPBearer(auto_error=False)
@@ -1398,6 +1416,19 @@ async def get_ml_relation_result(
         evaluated=record.evaluated,
         confidence=record.confidence,
         score=record.score
+    )
+
+@app.post("/api/notify/subscribe", tags=["API"])
+async def notify_subscribe(dbsession: database_models.SessionDep, data: dict) -> http_models.Result:
+    dbsession.add(database_models.WebPushSubscriptionInfo(subscription_info=data))
+    await dbsession.commit()
+    return http_models.Result(status="ok")
+
+@app.get("/api/notify/key", tags=["API"])
+async def notify_key(dbsession: database_models.SessionDep) -> http_models.NotificationKey:
+    return http_models.NotificationKey(
+        status="ok",
+        key=await push_notify.get_vapid_pubkey(dbsession)
     )
 
 # APIルートを先に登録した後でフロントエンドを配信する。
