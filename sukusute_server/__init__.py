@@ -41,11 +41,17 @@ async def notifier():
         try:
             async with database_models.AsyncSession(database_models.engine) as dbsession:
                 warnings = (await get_today_stats(dbsession)).warnings
+                warned: set[int] = set()
                 for warning in warnings:
                     if warning.child_id not in already_warned:
                         already_warned.add(warning.child_id)
+                        warned.add(warning.child_id)
                         await push_notify.send_notification(dbsession, f"歩数警告が発生しました: {warning.name}")
                         logger.info(f"Sent notification: child_id={warning.child_id}, name={warning.name}")
+                for hist in already_warned:
+                    if hist not in warned:
+                        # staled record
+                        already_warned.remove(hist)
         except:
             logger.exception("通知送信に失敗しました。")
 
