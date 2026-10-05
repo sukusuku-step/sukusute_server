@@ -44,6 +44,7 @@ async def notifier():
                 if warning.child_id not in already_warned:
                     already_warned.add(warning.child_id)
                     await push_notify.send_notification(dbsession, f"歩数警告が発生しました: {warning.name}")
+                    logger.info(f"Sent notification: child_id={warning.child_id}, name={warning.name}")
 
 @contextlib.asynccontextmanager
 async def lifespan(_):
