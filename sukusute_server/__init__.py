@@ -19,8 +19,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy import and_, or_
-from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sukusute_server import http_models, database_models, ml
@@ -349,49 +349,28 @@ async def list_device_statuses() -> http_models.DeviceStatusListResponse:
 
 @app.get("/api/data_freshness", tags=["API"])
 async def get_data_freshness(dbsession: database_models.SessionDep):
-    latest_ml_evaluation = (
-        sqlalchemy.select(
-            database_models.ChildBehaviorDataEvaluationHistory.child_id.label("child_id"),
-            sqlalchemy.func.max(
-                database_models.ChildBehaviorDataEvaluationHistory.date
-            ).label("latest_evaluation_date"),
-        )
-        .group_by(
-            database_models.ChildBehaviorDataEvaluationHistory.child_id
-        )
-        .subquery()
-    )
-
-    progress_rows = (
-        await dbsession.execute(
-            sqlalchemy.select(
-                database_models.SingleChildData.child_id,
-                sqlalchemy.func.count().label("received_rows"),
-            )
-            .outerjoin(
-                latest_ml_evaluation,
-                latest_ml_evaluation.c.child_id == database_models.SingleChildData.child_id,
-            )
-            .where(
-                sqlalchemy.or_(
-                    latest_ml_evaluation.c.latest_evaluation_date.is_(None),
-                    database_models.SingleChildData.date > latest_ml_evaluation.c.latest_evaluation_date,
-                )
-            )
-            .group_by(database_models.SingleChildData.child_id)
-        )
-    ).all()
-
+    # progressは「このサーバ起動後に実際にCSVを受信した児童」だけ表示する。
+    # 進捗値そのものはメモリではなくDBから復元し、ML本体と同じ関数で算出する。
     ml_progress = {}
-    for child_id, received_rows in progress_rows:
-        received_rows = min(int(received_rows or 0), 6000)
+    for child_id in sensor_data_received_at:
+        processed_boundary, pending_rows = await ml.get_behavior_progress(
+            dbsession, child_id
+        )
+        displayed_rows = min(pending_rows, 6000)
         ml_progress[str(child_id)] = {
-            "received_rows": received_rows,
+            "received_rows": displayed_rows,
+            "pending_rows": pending_rows,
             "required_rows": 6000,
-            "received_seconds": received_rows / 10.0,
+            "received_seconds": displayed_rows / 10.0,
             "required_seconds": 600.0,
+            "ready_for_inference": pending_rows >= 6000,
+            "processed_through": (
+                processed_boundary.isoformat()
+                if processed_boundary is not None
+                else None
+            ),
         }
-    
+
     latest_child_data = {
         str(child_id): received_at.isoformat()
         for child_id, received_at
@@ -411,6 +390,20 @@ async def get_data_freshness(dbsession: database_models.SessionDep):
         "child_distance": latest_distance_data,
         "ml_progress": ml_progress,
     }
+
+async def _run_ml_evaluation_with_new_session(
+    db_bind,
+    child_id: int,
+    distance_child_ids: list[int],
+) -> None:
+    """リクエスト用Sessionを持ち越さず、ML用の独立SessionでDBを参照する。"""
+    session_factory = async_sessionmaker(bind=db_bind, expire_on_commit=False)
+    try:
+        async with session_factory() as ml_session:
+            await ml.evaluate_data(ml_session, child_id, distance_child_ids)
+    except Exception:
+        logger.exception("ML background evaluation failed for child_id=%s", child_id)
+
 
 @app.post("/api/push_csv/{child_id}", tags=["API"])
 async def push_csv(
@@ -481,8 +474,14 @@ async def push_csv(
         for distance_child_id in distance_child_ids:
             distance_data_received_at[distance_child_id] = received_at
 
-    # 機械学習のバックグラウンドタスクを作成する（api/push_csvのAPIがM5側で叩かれる度に作成される）
-    background_tasks.add_task(ml.evaluate_data, dbsession, child_id, parsed_distance_children)
+    # リクエストのdbsessionはレスポンス後に破棄されるため、BackgroundTasksへ直接渡さない。
+    # 独立したAsyncSessionを作成して、DBだけを基準に推論状態を復元・更新する。
+    background_tasks.add_task(
+        _run_ml_evaluation_with_new_session,
+        dbsession.bind,
+        child_id,
+        parsed_distance_children,
+    )
 
     return http_models.Result(status="ok")
 

@@ -331,7 +331,6 @@ async function loadMlResults(force = false) {
     renderModelAnomalyWarnings();
 }
 
-// 日付をAPIのクエリパラメータ形式へ変換する。
 function dateQuery(date) {
     return `year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`;
 }
@@ -342,9 +341,6 @@ function isToday(date) {
         && date.getMonth() === now.getMonth()
         && date.getDate() === now.getDate();
 }
-
-// ===== ログイン画面とダッシュボード初期化 =====
-// ログインAPIを呼び、成功したトークンをブラウザへ保存する。
 
 async function login(username, password) {
     const result = await apiRequest('/api/auth/login', {
@@ -357,7 +353,6 @@ async function login(username, password) {
     await loadClasses();
 }
 
-// ダッシュボードを表示し、ログイン画面を隠す。
 function showApp() {
     document.getElementById('loginView').classList.add('is-hidden');
     document.getElementById('appView').classList.remove('is-hidden');
@@ -397,9 +392,8 @@ async function openConfigModal() {
     openModal('configModal');
 }
 
-// ログイン画面を表示し、認証が必要な画面を隠す。
 function showLogin() {
-    closeMenu(); // ログアウト時は必ずメニュー欄を閉じる
+    closeMenu();
 
     document.getElementById('loginView').classList.remove('is-hidden');
     document.getElementById('appView').classList.add('is-hidden');
@@ -410,7 +404,6 @@ function showLogin() {
     }
 }
 
-// クラス一覧を読み込み、選択欄を更新してから児童データを再取得する。
 async function loadClasses() {
     console.info('[ui] loading classes');
     const result = await apiRequest('/api/classes');
@@ -424,9 +417,6 @@ async function loadClasses() {
     selector.value = state.selectedClassId || '';
     await loadDashboard();
 }
-
-// ===== ダッシュボードのデータ取得と描画 =====
-// 選択中のクラスと日付に対応する児童・歩数を取得して画面を更新する。
 
 async function loadDashboard() {
     if (refreshInProgress) return;
@@ -443,11 +433,9 @@ async function loadDashboard() {
         state.children = children.children || [];
         state.stepIncreaseRanking = [];
 
-        // 歩数や端末状態のAPIを待たず、DBの児童一覧を先に表示する。
         renderStudents();
         renderRanking();
 
-        // 歩数と端末状態は、取得できた方から独立して画面へ反映する。
         const refreshResults = await Promise.allSettled([
             apiRequest(
                 `/api/stats/today?${dateQuery(
@@ -501,28 +489,60 @@ async function loadDashboard() {
                 renderStudents();
             }),
 
-            apiRequest(
-                '/api/data_freshness'
-            ).then((freshness) => {
-                state.dataFreshness = {
-                    serverStartedAt:
-                        freshness.server_started_at,
+            (async () => {
+                try {
+                    await loadMlResults();
+                    
+                    const freshness = await apiRequest('/api/data_freshness');
 
-                    childData:
-                        freshness.child_data || {},
+                    state.dataFreshness = {
+                        serverStartedAt:
+                            freshness.server_started_at,
 
-                    childDistance:
-                        freshness.child_distance || {},
+                        childData:
+                            freshness.child_data || {},
 
-                    mlProgress:
-                        freshness.ml_progress || {},
-                };
+                        childDistance:
+                            freshness.child_distance || {},
 
-                renderStudents();
-            }),
+                        mlProgress:
+                            freshness.ml_progress || {},
+                    };
 
-            loadMlResults()
-                .then(() => {
+                    for (const child of state.children) {
+                        const childId = Number(child.child_id);
+                        const behavior = state.mlBehavior[childId];
+                        const progress = state.dataFreshness.mlProgress[childId];
+
+                        if (!behavior || !progress) {
+                            continue;
+                        }
+
+                        const behaviorDate = parseTimestamp(
+                            behavior.date
+                        );
+
+                        const processedThrough = parseTimestamp(
+                            progress.processed_through
+                        );
+
+                        if (
+                            behaviorDate !== null
+                            && (
+                                processedThrough === null
+                                || behaviorDate > processedThrough
+                            )
+                        ) {
+                            state.dataFreshness.mlProgress[childId] = {
+                                ...progress,
+                                received_rows: 0,
+                                pending_rows: 0,
+                                received_seconds: 0,
+                                ready_for_inference: false,
+                            };
+                        }
+                    }
+
                     renderStudents();
 
                     if (
@@ -535,13 +555,14 @@ async function loadDashboard() {
                     ) {
                         renderRelationSummary();
                     }
-                })
-                .catch((error) => {
+                } catch (error) {
                     console.warn(
-                        '[ui] ML refresh failed',
+                        '[ui] ML/progress refresh failed',
                         error
                     );
-                }),
+                    throw error;
+                }
+            })(),
         ]);
 
         const failedRefresh = refreshResults.find((result) => result.status === 'rejected');
