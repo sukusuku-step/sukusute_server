@@ -23,7 +23,7 @@ async def get_vapid_key(dbsession: sukusute_server.database_models.SessionDep) -
 async def get_vapid_pubkey(dbsession: sukusute_server.database_models.SessionDep) -> bytes:
     privkey = await get_vapid_key(dbsession)
     pubkey = privkey.public_key()
-    return pubkey.public_bytes(Encoding.DER, PublicFormat.PKCS1)
+    return pubkey.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
 
 async def send_notification(dbsession: sukusute_server.database_models.SessionDep, msg: str) -> None:
     key = await get_vapid_key(dbsession)

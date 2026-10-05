@@ -24,7 +24,7 @@ def upgrade() -> None:
     op.create_table('vapid_key',
     sa.Column('_', sa.Boolean(), nullable=False),
     sa.Column('key_der', sa.LargeBinary(), nullable=False),
-    sa.CheckConstraint('_ = 1', name='no_multiple_keys'),
+    sa.CheckConstraint('CAST(_ AS INTEGER) = 1', name='no_multiple_keys'),
     sa.PrimaryKeyConstraint('_')
     )
     op.create_table('webpush_subinfo',

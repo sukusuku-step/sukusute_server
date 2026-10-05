@@ -1575,7 +1575,8 @@ refreshTimer = setInterval(() => {
 async function subscribe_notify() {
 
     document.getElementById('loginButton').addEventListener("click", async () => {
-        if (Notification.requestPermission() !== "granted") {
+        if (await Notification.requestPermission() !== "granted") {
+            console.error("not granted......")
             return;
         };
         await navigator.serviceWorker.register("service-worker.js");
@@ -1583,12 +1584,12 @@ async function subscribe_notify() {
         if (!await ready.pushManager.getSubscription()) {
             pubkey = await apiRequest("/api/notify/key", {method: "GET"});
             sub = await ready.pushManager.subscribe({
-                useVisibleOnly: true,
-                applicationServerKey: Uint8Array.fromBase64(pubkey.key)
+                userVisibleOnly: true,
+                applicationServerKey: Uint8Array.fromBase64(pubkey.key, {alphabet: "base64url"})
             });
             await apiRequest("/api/notify/subscribe", {
                 method: "POST",
-                body: sub.toJSON().stringify()
+                body: JSON.stringify(sub.toJSON())
             });
         };
     })
