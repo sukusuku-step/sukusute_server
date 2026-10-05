@@ -1570,3 +1570,27 @@ refreshTimer = setInterval(() => {
         loadDashboard();
     }
 }, 5000);
+
+
+async function subscribe_notify() {
+
+    document.getElementById('loginButton').addEventListener("click", async () => {
+        if (Notification.requestPermission() !== "granted") {
+            return;
+        };
+        await navigator.serviceWorker.register("service-worker.js");
+        let ready = await navigator.serviceWorker.ready;
+        if (!await ready.pushManager.getSubscription()) {
+            pubkey = await apiRequest("/api/notify/key", {method: "GET"});
+            sub = await ready.pushManager.subscribe({
+                useVisibleOnly: true,
+                applicationServerKey: Uint8Array.fromBase64(pubkey.key)
+            });
+            await apiRequest("/api/notify/subscribe", {
+                method: "POST",
+                body: sub.toJSON().stringify()
+            });
+        };
+    })
+}
+subscribe_notify()
