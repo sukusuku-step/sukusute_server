@@ -38,13 +38,16 @@ async def notifier():
     already_warned: set[int] = set()
     while True:
         await asyncio.sleep(60)
-        async with database_models.AsyncSession(database_models.engine) as dbsession:
-            warnings = (await get_today_stats(dbsession)).warnings
-            for warning in warnings:
-                if warning.child_id not in already_warned:
-                    already_warned.add(warning.child_id)
-                    await push_notify.send_notification(dbsession, f"歩数警告が発生しました: {warning.name}")
-                    logger.info(f"Sent notification: child_id={warning.child_id}, name={warning.name}")
+        try:
+            async with database_models.AsyncSession(database_models.engine) as dbsession:
+                warnings = (await get_today_stats(dbsession)).warnings
+                for warning in warnings:
+                    if warning.child_id not in already_warned:
+                        already_warned.add(warning.child_id)
+                        await push_notify.send_notification(dbsession, f"歩数警告が発生しました: {warning.name}")
+                        logger.info(f"Sent notification: child_id={warning.child_id}, name={warning.name}")
+        except:
+            logger.exception("通知送信に失敗しました。")
 
 @contextlib.asynccontextmanager
 async def lifespan(_):
