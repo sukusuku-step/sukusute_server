@@ -39,6 +39,12 @@ RELATEDNESS_MAX_STEPS_MINUTES = 14
 ANOMALY_EPS = 1e-6
 
 latest_anomaly_results: dict[int, dict] = {}
+
+# 実際に推論を実行した時刻はサーバのメモリ上で別管理する（DBのdateは推論・progress用の境界として使用）
+# Freshnessはサーバの再起動時には一度全て色を薄くする仕様なのでこれで良い
+latest_behavior_evaluated_at: dict[int, datetime.datetime] = {}
+latest_distance_evaluated_at: dict[tuple[int, int], datetime.datetime] = {}
+
 ml_inference_semaphore = asyncio.Semaphore(1)
 behavior_evaluation_locks: dict[int, asyncio.Lock] = {}
 distance_evaluation_locks: dict[tuple[int, int], asyncio.Lock] = {}
@@ -334,8 +340,8 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
 
             del baseline_input, baseline_records, single_records
 
-            # 履歴dateを「今回処理した6000行目の計測時刻」として保存する。
-            # progressも同じ境界を使うため、6000行ちょうどならcommit後に0%へ戻る。
+            # dateを「今回処理した6000行目の計測時刻」として保存する（境界として使う）
+            # progressも同じ境界を使うため、6000行ちょうどならcommit後に0%へ戻る
             dbsession.add(
                 sukusute_server.database_models.ChildBehaviorDataEvaluationHistory(
                     child_id=child_id,
@@ -359,6 +365,9 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                 )
             )
             await dbsession.commit()
+
+            # commitが正常終了した時点をFreshness用の推論時刻として記録
+            latest_behavior_evaluated_at[child_id] = datetime.datetime.now()
 
         await evaluate_distance_data(dbsession, child_id, distance_child_ids)
         await dbsession.commit()
@@ -465,3 +474,6 @@ async def evaluate_distance_data(
                     )
                 )
                 await dbsession.commit()
+
+                # commitが正常終了した時点をFreshness用の推論時刻として記録
+                latest_distance_evaluated_at[pair] = datetime.datetime.now()

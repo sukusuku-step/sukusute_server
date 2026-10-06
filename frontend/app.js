@@ -492,7 +492,7 @@ async function loadDashboard() {
             (async () => {
                 try {
                     await loadMlResults();
-                    
+
                     const freshness = await apiRequest('/api/data_freshness');
 
                     state.dataFreshness = {
@@ -720,7 +720,7 @@ function renderStudents() {
         card.querySelector('.student-status').innerHTML = '';
 
         const behavior = state.mlBehavior[child.child_id];
-        const behaviorIsStale = behavior ? isMlResultStale(behavior.date) : false;
+        const behaviorIsStale = behavior ? isMlResultStale(behavior.evaluated_at) : false;
 
         const anomaly = state.mlAnomalies[child.child_id];
 

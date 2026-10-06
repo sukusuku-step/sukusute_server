@@ -626,25 +626,32 @@ async def delete_children(
         database_models.ChildDistanceData.child_id_1.in_(child_ids),
         database_models.ChildDistanceData.child_id_2.in_(child_ids),
     )
+
     evaluation_pair_condition = sqlalchemy.or_(
         database_models.ChildDistanceEvaluationHistory.child_id_1.in_(child_ids),
         database_models.ChildDistanceEvaluationHistory.child_id_2.in_(child_ids),
     )
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.ChildDistanceEvaluationHistory
     ).where(evaluation_pair_condition))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.ChildBehaviorDataEvaluationHistory
     ).where(database_models.ChildBehaviorDataEvaluationHistory.child_id.in_(child_ids)))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.ChildDistanceData
     ).where(pair_condition))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.SingleChildData
     ).where(database_models.SingleChildData.child_id.in_(child_ids)))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.Child
     ).where(database_models.Child.child_id.in_(child_ids)))
+
     await dbsession.commit()
 
     for child_id in child_ids:
@@ -1434,34 +1441,44 @@ async def get_ml_behavior_result(
     """ 単独児童に関する最新の推論結果を返却する。 """
     record = (await dbsession.scalar(
             sqlalchemy.select(database_models.ChildBehaviorDataEvaluationHistory)
-            .where(
-                database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id
-            )
+            .where(database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id)
             .order_by(sqlalchemy.desc(database_models.ChildBehaviorDataEvaluationHistory.date))
             .limit(1)
     ))
     if not record:
         raise fastapi.exceptions.HTTPException(404, "Record not found.")
-    return http_models.MLSingleResult(
-            status="ok",
-            date=record.date,
-            behavior_acce=record.behavior_acce,
-            behavior_acce_confidence=record.behavior_acce_confidence,
-            behavior_pedo=record.behavior_pedo,
-            behavior_pedo_confidence=record.behavior_pedo_confidence,
-            activity_level=record.activity,
-            activity_confidence=record.activity_confidence,
-            baseline_steps_10min_median=record.baseline_steps_10min_median,
-            baseline_steps_10min_mad_scale=record.baseline_steps_10min_mad_scale,
-            baseline_activity_mean_proxy_median=record.baseline_activity_mean_proxy_median,
-            baseline_activity_mean_proxy_mad_scale=record.baseline_activity_mean_proxy_mad_scale,
-            baseline_acc_std_median=record.baseline_acc_std_median,
-            baseline_acc_std_mad_scale=record.baseline_acc_std_mad_scale,
-            baseline_gyro_mean_median=record.baseline_gyro_mean_median,
-            baseline_gyro_mean_mad_scale=record.baseline_gyro_mean_mad_scale,
-            baseline_mag_mean_median=record.baseline_mag_mean_median,
-            baseline_mag_mean_mad_scale=record.baseline_mag_mean_mad_scale
-    )
+    
+    return {
+        "status": "ok",
+
+        # Progress側との同期用。（意味は処理済みデータ境界）
+        "date": record.date,
+
+        # Freshness用
+        "evaluated_at": (
+            ml.latest_behavior_evaluated_at[child_id].isoformat()
+            if child_id in ml.latest_behavior_evaluated_at
+            else None
+        ),
+
+        "behavior_acce": record.behavior_acce,
+        "behavior_acce_confidence": record.behavior_acce_confidence,
+        "behavior_pedo": record.behavior_pedo,
+        "behavior_pedo_confidence": record.behavior_pedo_confidence,
+        "activity_level": record.activity,
+        "activity_confidence": record.activity_confidence,
+
+        "baseline_steps_10min_median": record.baseline_steps_10min_median,
+        "baseline_steps_10min_mad_scale": record.baseline_steps_10min_mad_scale,
+        "baseline_activity_mean_proxy_median": record.baseline_activity_mean_proxy_median,
+        "baseline_activity_mean_proxy_mad_scale": record.baseline_activity_mean_proxy_mad_scale,
+        "baseline_acc_std_median": record.baseline_acc_std_median,
+        "baseline_acc_std_mad_scale": record.baseline_acc_std_mad_scale,
+        "baseline_gyro_mean_median": record.baseline_gyro_mean_median,
+        "baseline_gyro_mean_mad_scale": record.baseline_gyro_mean_mad_scale,
+        "baseline_mag_mean_median": record.baseline_mag_mean_median,
+        "baseline_mag_mean_mad_scale": record.baseline_mag_mean_mad_scale
+    }
 
 @app.get("/api/ml/anomaly/{child_id}", tags=["API"])
 async def get_ml_anomaly_result(child_id: int):
