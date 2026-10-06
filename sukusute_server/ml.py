@@ -42,7 +42,7 @@ latest_anomaly_results: dict[int, dict] = {}
 
 # 実際に推論を実行した時刻はサーバのメモリ上で別管理する（DBのdateは推論・progress用の境界として使用）
 # Freshnessはサーバの再起動時には一度全て色を薄くする仕様なのでこれで良い
-latest_behavior_evaluated_at: dict[int, datetime.datetime] = {}
+latest_behavior_completion: dict[int, dict] = {}
 latest_distance_evaluated_at: dict[tuple[int, int], datetime.datetime] = {}
 
 ml_inference_semaphore = asyncio.Semaphore(1)
@@ -366,8 +366,13 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
             )
             await dbsession.commit()
 
+            completed_at = datetime.datetime.now()
+
             # commitが正常終了した時点をFreshness用の推論時刻として記録
-            latest_behavior_evaluated_at[child_id] = datetime.datetime.now()
+            latest_behavior_completion[child_id] = {
+                "processed_through": evaluation_data_end,
+                "evaluated_at": completed_at
+            }
 
         await evaluate_distance_data(dbsession, child_id, distance_child_ids)
         await dbsession.commit()

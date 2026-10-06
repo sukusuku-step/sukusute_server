@@ -411,12 +411,21 @@ async def get_data_freshness(dbsession: database_models.SessionDep):
         in distance_data_received_at.items()
     }
 
+    ml_completed = {
+        str(child_id): {
+            "processed_through": completion["processed_through"].isoformat(),
+            "evaluated_at": completion["evaluated_at"].isoformat(),
+        }
+        for child_id, completion in ml.latest_behavior_completion.items()
+    }
+
     return {
         "status": "ok",
         "server_started_at": SERVER_STARTED_AT.isoformat(),
         "child_data": latest_child_data,
         "child_distance": latest_distance_data,
         "ml_progress": ml_progress,
+        "ml_completed": ml_completed 
     }
 
 async def _run_ml_evaluation_with_new_session(
@@ -1475,6 +1484,16 @@ async def get_ml_behavior_result(
     ))
     if not record:
         raise fastapi.exceptions.HTTPException(404, "Record not found.")
+
+    completion = ml.latest_behavior_completion.get(child_id)
+
+    evaluated_at = None
+
+    if (
+        completion is not None
+        and completion["processed_through"] == record.date
+    ):
+        evaluated_at = completion["evaluated_at"].isoformat()
     
     return {
         "status": "ok",
@@ -1483,11 +1502,7 @@ async def get_ml_behavior_result(
         "date": record.date,
 
         # Freshness用
-        "evaluated_at": (
-            ml.latest_behavior_evaluated_at[child_id].isoformat()
-            if child_id in ml.latest_behavior_evaluated_at
-            else None
-        ),
+        "evaluated_at": evaluated_at,
 
         "behavior_acce": record.behavior_acce,
         "behavior_acce_confidence": record.behavior_acce_confidence,

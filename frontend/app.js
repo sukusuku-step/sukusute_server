@@ -17,13 +17,21 @@ const state = {
         childData: {},
         childDistance: {},
         mlProgress: {},
+        mlCompleted: {}
     },
 
     mlBehavior: {},
     mlAnomalies: {},
     mlRelations: {},
 
+    mlBehaviorFreshness: {},
+
+    // ML推論完了検出用
+    mlCompletionSeen: {},
+    mlProcessedThrough: {},
+
     mlDetailOpenStates: {},
+
     mlUpdatedAt: 0,
     mlChildSignature: '',
 
@@ -331,6 +339,57 @@ async function loadMlResults(force = false) {
     renderModelAnomalyWarnings();
 }
 
+async function refreshCompletedBehavior(childId, expectedProcessedThrough) {
+    const expectedTime = parseTimestamp(expectedProcessedThrough);
+
+    if (expectedTime === null) {
+        return false;
+    }
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const [behavior, anomaly] = await Promise.all([
+            apiRequestOptional(`/api/ml/behavior/${childId}`),
+            apiRequestOptional(`/api/ml/anomaly/${childId}`)
+        ]);
+
+        const behaviorTime = behavior
+            ? parseTimestamp(behavior.date)
+            : null;
+
+        if (
+            behavior
+            && behaviorTime !== null
+            && behaviorTime >= expectedTime
+        ) {
+            state.mlBehavior[childId] = behavior;
+            state.mlAnomalies[childId] = anomaly;
+            state.mlBehaviorFreshness[childId] = {
+                date: behavior.date,
+                evaluatedAt: new Date().toISOString(),
+            };
+
+            renderModelAnomalyWarnings();
+            renderStudents();
+
+            return true;
+        }
+
+        await new Promise(
+            (resolve) => setTimeout(resolve, 250)
+        );
+    }
+
+    console.warn(
+        '[ui] new ML behavior was not visible after completion',
+        {
+            childId,
+            expectedProcessedThrough
+        }
+    );
+
+    return false;
+}
+
 function dateQuery(date) {
     return `year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`;
 }
@@ -496,60 +555,103 @@ async function loadDashboard() {
                     const freshness = await apiRequest('/api/data_freshness');
 
                     state.dataFreshness = {
-                        serverStartedAt:
-                            freshness.server_started_at,
-
-                        childData:
-                            freshness.child_data || {},
-
-                        childDistance:
-                            freshness.child_distance || {},
-
-                        mlProgress:
-                            freshness.ml_progress || {},
+                        serverStartedAt: freshness.server_started_at,
+                        childData: freshness.child_data || {},
+                        childDistance: freshness.child_distance || {},
+                        mlProgress: freshness.ml_progress || {},
+                        mlCompleted: freshness.ml_completed || {}
                     };
+
+                    // 今回の更新で新しいML推論完了を検出したか
+                    const completedChildIds = [];
 
                     for (const child of state.children) {
                         const childId = Number(child.child_id);
-                        const behavior = state.mlBehavior[childId];
-                        const progress = state.dataFreshness.mlProgress[childId];
+                        const completion = state.dataFreshness.mlCompleted?.[childId];
 
-                        if (!behavior || !progress) {
+                        if (!completion) {
                             continue;
                         }
 
-                        const behaviorDate = parseTimestamp(
-                            behavior.date
-                        );
+                        const completionKey = `${completion.processed_through}|${completion.evaluated_at}`;
+                        const previousCompletionKey = state.mlCompletionSeen[childId];
 
-                        const processedThrough = parseTimestamp(
-                            progress.processed_through
-                        );
+                        if (previousCompletionKey === undefined) {
+                            state.mlCompletionSeen[childId] = completionKey;
+                            continue;
+                        }
+
+                        if (previousCompletionKey !== completionKey) {
+                            completedChildIds.push(childId);
+
+                            state.mlCompletionSeen[childId] = completionKey;
+
+                            const progress = state.dataFreshness.mlProgress?.[childId];
+
+                            if (progress) {
+                                state.dataFreshness.mlProgress[childId] = {
+                                    ...progress,
+                                    received_rows: 0,
+                                    received_seconds: 0,
+                                    ready_for_inference: false
+                                };
+                            }
+                        }
+                    }
+
+                    const completedBehaviors = [];
+
+                    for (const child of state.children) {
+                        const childId = Number(child.child_id);
+
+                        const progress = state.dataFreshness.mlProgress?.[childId];
+
+                        if (!progress) {
+                            continue;
+                        }
+
+                        const newProcessedThrough = progress.processed_through || null;
+                        const previousProcessedThrough = state.mlProcessedThrough[childId] || null;
 
                         if (
-                            behaviorDate !== null
-                            && (
-                                processedThrough === null
-                                || behaviorDate > processedThrough
-                            )
+                            previousProcessedThrough !== null
+                            && newProcessedThrough !== null
+                            && newProcessedThrough !== previousProcessedThrough
                         ) {
                             state.dataFreshness.mlProgress[childId] = {
                                 ...progress,
                                 received_rows: 0,
-                                pending_rows: 0,
                                 received_seconds: 0,
                                 ready_for_inference: false,
                             };
+
+                            completedBehaviors.push({
+                                childId,
+                                processedThrough:
+                                    newProcessedThrough,
+                            });
                         }
+
+                        state.mlProcessedThrough[childId] = newProcessedThrough;
+                    }
+
+                    if (completedBehaviors.length > 0) {
+                        await Promise.all(
+                            completedBehaviors.map(
+                                ({ childId, processedThrough }) =>
+                                    refreshCompletedBehavior(
+                                        childId,
+                                        processedThrough
+                                    )
+                            )
+                        );
                     }
 
                     renderStudents();
 
                     if (
                         !document
-                            .getElementById(
-                                'relationModal'
-                            )
+                            .getElementById('relationModal')
                             .classList
                             .contains('is-hidden')
                     ) {
@@ -637,8 +739,7 @@ function renderStudents() {
             return 0;
         }
 
-        return (state.steps[b.child_id] || 0)
-            - (state.steps[a.child_id] || 0);
+        return (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0);
     });
 
     const visibleIds = new Set(sorted.map((child) => child.child_id));
@@ -745,8 +846,51 @@ function renderStudents() {
         card.querySelector('.student-status').innerHTML = '';
 
         const behavior = state.mlBehavior[child.child_id];
-        const behaviorIsStale = behavior ? isMlResultStale(behavior.evaluated_at) : false;
 
+        const completion = state.dataFreshness.mlCompleted?.[child.child_id];
+
+        const confirmedFreshness = state.mlBehaviorFreshness[child.child_id];
+
+
+        const behaviorTime = behavior
+            ? parseTimestamp(behavior.date)
+            : null;
+
+        const completionTime = completion
+            ? parseTimestamp(completion.processed_through)
+            : null;
+
+        const confirmedBehaviorTime = confirmedFreshness
+            ? parseTimestamp(confirmedFreshness.date)
+            : null;
+
+        let behaviorFreshnessTimestamp = behavior?.evaluated_at;
+
+        if (
+            behavior
+            && completion
+            && behaviorTime !== null
+            && completionTime !== null
+            && behaviorTime === completionTime
+        ) {
+            behaviorFreshnessTimestamp = completion.evaluated_at;
+        }
+
+        else if (
+            behavior
+            && confirmedFreshness
+            && behaviorTime !== null
+            && confirmedBehaviorTime !== null
+            && behaviorTime === confirmedBehaviorTime
+        ) {
+            behaviorFreshnessTimestamp = confirmedFreshness.evaluatedAt;
+        }
+
+
+        const behaviorIsStale = behavior
+            ? isMlResultStale(behaviorFreshnessTimestamp)
+            : false;
+                
         const anomaly = state.mlAnomalies[child.child_id];
 
         const currentBaselineDetails = card.querySelector('.baseline-details');
@@ -1163,10 +1307,6 @@ function renderRelatedNetwork() {
 
     const radiusX = width * 0.43;
     const radiusY = height * 0.39;
-
-    let nodeRadius = 34;
-    let nodeFontSize = 14;
-    let maxNameLength = 7;
 
     if (children.length > 16) {
         nodeRadius = 23;
