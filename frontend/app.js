@@ -750,7 +750,7 @@ function renderStudents() {
             .filter((other) => other.child_id !== child.child_id)
             .map((other) => {
                 const relation = state.mlRelations[relationKey(child.child_id, other.child_id)];
-                const relationIsStale = relation ? isMlResultStale(relation.date) : false;
+                const relationIsStale = relation ? isMlResultStale(relation.evaluated_at) : false;
 
                 return `
                     <div class="relation-score-row${staleClass(relationIsStale)}">
