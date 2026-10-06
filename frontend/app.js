@@ -615,7 +615,32 @@ function renderStudents() {
         const rect = card.getBoundingClientRect();
         previousPositions.set(Number(card.dataset.studentCard), { left: rect.left, top: rect.top });
     });
-    const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
+
+    // staleで歩数が薄色になっている児童は歩数値を順位計算に使わない。
+    const sorted = [...state.children].sort((a, b) => {
+        const aIsStale = isFreshnessStale(
+            state.dataFreshness.childData[a.child_id],
+            SENSOR_DATA_STALE_MS
+        );
+        const bIsStale = isFreshnessStale(
+            state.dataFreshness.childData[b.child_id],
+            SENSOR_DATA_STALE_MS
+        );
+
+        // freshな歩数だけを累計歩数順の並び替えに使う。
+        // staleな児童は歩数値を順位計算に使わず、freshな児童の後ろへ回す。
+        if (aIsStale !== bIsStale) {
+            return aIsStale ? 1 : -1;
+        }
+
+        if (aIsStale && bIsStale) {
+            return 0;
+        }
+
+        return (state.steps[b.child_id] || 0)
+            - (state.steps[a.child_id] || 0);
+    });
+
     const visibleIds = new Set(sorted.map((child) => child.child_id));
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         if (!visibleIds.has(Number(card.dataset.studentCard))) card.remove();
