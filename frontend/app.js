@@ -1107,7 +1107,7 @@ function renderRelationSummary() {
             const child2 = state.children[j];
 
             const relation = state.mlRelations[relationKey(child1.child_id, child2.child_id)];
-            const relationIsStale = relation ? isMlResultStale(relation.date) : false;
+            const relationIsStale = relation ? isMlResultStale(relation.evaluated_at) : false;
 
             rows.push(`
                 <div class="relation-pair${staleClass(relationIsStale)}">
@@ -1509,6 +1509,22 @@ function escapeHtml(value) {
 // date inputへ設定できるYYYY-MM-DD文字列を作る。
 function formatDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// ===== 初期表示 =====
+
+const modelAnomalyPanel = document.getElementById('modelAnomalyPanel');
+const modelAnomalyList = document.getElementById('modelAnomalyList');
+const modelAnomalyCount = document.getElementById('modelAnomalyCount');
+
+if (modelAnomalyPanel && modelAnomalyList && modelAnomalyCount) {
+    modelAnomalyPanel.hidden = false;
+    modelAnomalyPanel.classList.add('is-clear');
+
+    modelAnomalyList.innerHTML =
+        '<li class="model-anomaly-clear">現在、警告はありません。</li>';
+
+    modelAnomalyCount.textContent = '警告なし';
 }
 
 // ===== 画面フォームとメニューのイベント処理 =====
