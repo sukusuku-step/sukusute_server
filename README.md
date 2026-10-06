@@ -375,6 +375,24 @@ timestamp,steps,ax,ay,az,gx,gy,gz,mx,my,mz,start,Distance_{child_id},Distance_{c
 - `confidence`: 推論の確信度。
 - `score`: 推論に用いたスコア値。
 
+### 通知関連API
+
+#### `GET /api/notify/key`
+
+通知受信用VAPID ec公開鍵を返す。
+base64-urlsafeデコードしてから、JSにおける`PushManager.subscribe`の`applicationServerKey`オプションに指定可能。
+```json
+{
+  "status": "ok",
+  "key": "w5LCicOWLcKFwqBidXUWJVvCizY9wozDn1bDgSQGwpHDjMOkwqU="
+}
+```
+
+#### `POST /api/notify/subscribe`
+
+クライアント側JSにて、`PushSubscription.toJSON`の返り値を登録し、通知の配信を開始する。
+JSON.stringifyの結果をそのままbodyとしてPOSTする。
+
 ## curlでの確認例
 
 ```sh
