@@ -1595,11 +1595,7 @@ function renderRelatedNetwork() {
 
                 edge.classList.add('is-selected');
 
-                const score =
-                    Number(edge.dataset.score);
-
-                const confidence =
-                    Number(edge.dataset.confidence);
+                const score = Number(edge.dataset.score);
 
                 detail.innerHTML = `
                     <strong>
