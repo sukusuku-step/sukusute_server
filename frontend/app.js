@@ -1132,18 +1132,64 @@ function renderOpenStudentDetailModal() {
     const card = document.querySelector(`[data-student-card="${childId}"]`);
     if (!child || !card) return;
 
-    document.getElementById('studentDetailTitle').textContent =
-        `${child.name || `子ども${childId}`}の詳細`;
-    document.getElementById('studentDetailContent').innerHTML = `
+    const content = document.getElementById('studentDetailContent');
+
+    const currentBaselineDetails = content.querySelector('.baseline-details');
+
+    const currentRelationDetails = content.querySelector('.relation-details');
+
+    if (!state.mlDetailOpenStates[childId]) {
+        state.mlDetailOpenStates[childId] = {
+            baseline: false,
+            relation: false
+        };
+    }
+
+    if (currentBaselineDetails) {
+        state.mlDetailOpenStates[childId].baseline = currentBaselineDetails.open;
+    }
+
+
+    if (currentRelationDetails) {
+        state.mlDetailOpenStates[childId].relation = currentRelationDetails.open;
+    }
+
+    document.getElementById('studentDetailTitle').textContent = `${child.name || `子ども${childId}`}の詳細`;
+
+    content.innerHTML = `
         <div class="student-detail-summary">
             <strong>${escapeHtml(child.name || `子ども${childId}`)}</strong>
-            <span>${escapeHtml(state.nearestNames[childId] ? `最も近くにいる人：${state.nearestNames[childId]}` : '近くにいる人：データなし')}</span>
+            <span>${escapeHtml(
+                state.nearestNames[childId]
+                    ? `最も近くにいる人：${state.nearestNames[childId]}`
+                    : '近くにいる人：データなし'
+            )}</span>
             <span>歩数：${(state.steps[childId] || 0).toLocaleString()}</span>
         </div>
+
         ${card.querySelector('.device-status')?.outerHTML || ''}
         ${card.querySelector('.student-status')?.outerHTML || ''}
         ${renderStudentMlProgress(childId)}
-        ${card.querySelector('.ml-summary')?.outerHTML || ''}`;
+        ${card.querySelector('.ml-summary')?.outerHTML || ''}
+    `;
+
+    const baselineDetails = content.querySelector('.baseline-details');
+
+    const relationDetails = content.querySelector('.relation-details');
+
+    if (baselineDetails) {
+        baselineDetails.open = state.mlDetailOpenStates[childId].baseline;
+        baselineDetails.addEventListener('toggle', () => {
+            state.mlDetailOpenStates[childId].baseline = baselineDetails.open;
+        });
+    }
+
+    if (relationDetails) {
+        relationDetails.open = state.mlDetailOpenStates[childId].relation;
+        relationDetails.addEventListener('toggle', () => {
+            state.mlDetailOpenStates[childId].relation = relationDetails.open;
+        });
+    }
 }
 
 function openStudentDetailModal(childId) {
