@@ -20,8 +20,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 import sqlalchemy
 import sqlalchemy.orm
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy import and_, or_
-from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sukusute_server import http_models, database_models, ml, push_notify
@@ -64,8 +64,13 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 sessions: dict[str, str] = {}
 device_statuses: dict[int, http_models.DeviceStatus] = {}
-bearer = HTTPBearer(auto_error=False)
+sensor_data_received_at: dict[int, datetime.datetime] = {}
+distance_data_received_at: dict[int, datetime.datetime] = {}
 
+# フロントで「サーバ起動後に更新されたか」を判定するための基準時刻。
+SERVER_STARTED_AT = datetime.datetime.now()
+
+bearer = HTTPBearer(auto_error=False)
 
 def migrate_database() -> None:
     """プロジェクトルートのSQLiteへ、Alembicの最新スキーマを適用する。"""
@@ -370,6 +375,64 @@ async def list_device_statuses() -> http_models.DeviceStatusListResponse:
 
 # ===== センサーデータCSV受信 =====
 
+@app.get("/api/data_freshness", tags=["API"])
+async def get_data_freshness(dbsession: database_models.SessionDep):
+    # progressは「このサーバ起動後に実際にCSVを受信した児童」だけ表示する。
+    # 進捗値そのものはメモリではなくDBから復元し、ML本体と同じ関数で算出する。
+    ml_progress = {}
+    for child_id in sensor_data_received_at:
+        processed_boundary, pending_rows = await ml.get_behavior_progress(
+            dbsession, child_id
+        )
+        displayed_rows = min(pending_rows, 6000)
+        ml_progress[str(child_id)] = {
+            "received_rows": displayed_rows,
+            "pending_rows": pending_rows,
+            "required_rows": 6000,
+            "received_seconds": displayed_rows / 10.0,
+            "required_seconds": 600.0,
+            "ready_for_inference": pending_rows >= 6000,
+            "processed_through": (
+                processed_boundary.isoformat()
+                if processed_boundary is not None
+                else None
+            ),
+        }
+
+    latest_child_data = {
+        str(child_id): received_at.isoformat()
+        for child_id, received_at
+        in sensor_data_received_at.items()
+    }
+
+    latest_distance_data = {
+        str(child_id): received_at.isoformat()
+        for child_id, received_at
+        in distance_data_received_at.items()
+    }
+
+    return {
+        "status": "ok",
+        "server_started_at": SERVER_STARTED_AT.isoformat(),
+        "child_data": latest_child_data,
+        "child_distance": latest_distance_data,
+        "ml_progress": ml_progress,
+    }
+
+async def _run_ml_evaluation_with_new_session(
+    db_bind,
+    child_id: int,
+    distance_child_ids: list[int],
+) -> None:
+    """リクエスト用Sessionを持ち越さず、ML用の独立SessionでDBを参照する。"""
+    session_factory = async_sessionmaker(bind=db_bind, expire_on_commit=False)
+    try:
+        async with session_factory() as ml_session:
+            await ml.evaluate_data(ml_session, child_id, distance_child_ids)
+    except Exception:
+        logger.exception("ML background evaluation failed for child_id=%s", child_id)
+
+
 @app.post("/api/push_csv/{child_id}", tags=["API"])
 async def push_csv(
         body: typing.Annotated[bytes, fastapi.Body(media_type="text/csv")],
@@ -425,8 +488,28 @@ async def push_csv(
         await dbsession.execute(distance_insert, distance_data_rows)
     await dbsession.commit()
 
-    # 機械学習のバックグラウンドタスクを作成する（api/push_csvのAPIがM5側で叩かれる度に作成される）
-    background_tasks.add_task(ml.evaluate_data, dbsession, child_id, parsed_distance_children)
+    received_at = datetime.datetime.now()
+    if child_data_rows:
+        sensor_data_received_at[child_id] = received_at
+    if distance_data_rows:
+        distance_child_ids = {
+            row["child_id_1"]
+            for row in distance_data_rows
+        } | {
+            row["child_id_2"]
+            for row in distance_data_rows
+        }
+        for distance_child_id in distance_child_ids:
+            distance_data_received_at[distance_child_id] = received_at
+
+    # リクエストのdbsessionはレスポンス後に破棄されるため、BackgroundTasksへ直接渡さない。
+    # 独立したAsyncSessionを作成して、DBだけを基準に推論状態を復元・更新する。
+    background_tasks.add_task(
+        _run_ml_evaluation_with_new_session,
+        dbsession.bind,
+        child_id,
+        parsed_distance_children,
+    )
 
     return http_models.Result(status="ok")
 
@@ -571,25 +654,32 @@ async def delete_children(
         database_models.ChildDistanceData.child_id_1.in_(child_ids),
         database_models.ChildDistanceData.child_id_2.in_(child_ids),
     )
+
     evaluation_pair_condition = sqlalchemy.or_(
         database_models.ChildDistanceEvaluationHistory.child_id_1.in_(child_ids),
         database_models.ChildDistanceEvaluationHistory.child_id_2.in_(child_ids),
     )
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.ChildDistanceEvaluationHistory
     ).where(evaluation_pair_condition))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.ChildBehaviorDataEvaluationHistory
     ).where(database_models.ChildBehaviorDataEvaluationHistory.child_id.in_(child_ids)))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.ChildDistanceData
     ).where(pair_condition))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.SingleChildData
     ).where(database_models.SingleChildData.child_id.in_(child_ids)))
+
     await dbsession.execute(sqlalchemy.delete(
         database_models.Child
     ).where(database_models.Child.child_id.in_(child_ids)))
+
     await dbsession.commit()
 
     for child_id in child_ids:
@@ -757,33 +847,48 @@ async def get_today_stats(
     )
 
     # 全児童のその日の歩数データ（累計と1分間の増加ランキングに使用）
-    all_step_data = (await dbsession.execute(
+    latest_step_dates = (await dbsession.execute(
         sqlalchemy.select(
             database_models.SingleChildData.child_id,
-            database_models.Child.name,
-            database_models.SingleChildData.steps,
-            database_models.SingleChildData.date
-        )
-        .join(
-            database_models.Child,
-            database_models.SingleChildData.child_id == database_models.Child.child_id
+            sqlalchemy.func.max(database_models.SingleChildData.date)
         )
         .where(
             database_models.SingleChildData.date >= start_date,
             database_models.SingleChildData.date <= end_date
         )
-        .order_by(
-            database_models.SingleChildData.child_id,
-            database_models.SingleChildData.date.desc()
-        )
+        .group_by(database_models.SingleChildData.child_id)
     )).all()
 
+    if latest_step_dates:
+        step_windows = [
+            sqlalchemy.and_(
+                database_models.SingleChildData.child_id == child_id,
+                database_models.SingleChildData.date >= latest_date - datetime.timedelta(seconds=90),
+                database_models.SingleChildData.date <= latest_date
+            )
+            for child_id, latest_date in latest_step_dates
+        ]
+        all_step_data = (await dbsession.execute(
+            sqlalchemy.select(
+                database_models.SingleChildData.child_id,
+                database_models.Child.name,
+                database_models.SingleChildData.steps,
+                database_models.SingleChildData.date
+            )
+            .join(
+                database_models.Child,
+                database_models.SingleChildData.child_id == database_models.Child.child_id
+            )
+            .where(sqlalchemy.or_(*step_windows))
+            .order_by(
+                database_models.SingleChildData.child_id,
+                database_models.SingleChildData.date.desc()
+            )
+        )).all()
+    else:
+        all_step_data = []
+
     logger.info(f"get_today_stats: all_step_data count={len(all_step_data)}")
-    for child_id, name, steps_val, date_val in all_step_data:
-        logger.info(
-            f"  child_id={child_id}, name={name}, "
-            f"steps={steps_val}, date={date_val}"
-        )
 
     # child_idごとに最新のデータのみを抽出
     student_steps = {}
@@ -834,15 +939,13 @@ async def get_today_stats(
     prev_start = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 0, 0, 0)
     prev_end = datetime.datetime(prev_date.year, prev_date.month, prev_date.day, 23, 59, 59)
 
-    prev_step_data = (await dbsession.execute(
-        sqlalchemy.select(database_models.SingleChildData)
+    prev_total_steps = (await dbsession.scalar(
+        sqlalchemy.select(sqlalchemy.func.sum(database_models.SingleChildData.steps))
         .where(
             database_models.SingleChildData.date >= prev_start,
             database_models.SingleChildData.date <= prev_end
         )
-    )).scalars().all()
-
-    prev_total_steps = sum(d.steps for d in prev_step_data)
+    )) or 0
     step_change = total_steps - prev_total_steps if prev_total_steps > 0 else 0
     step_change_percent = (
         ((total_steps - prev_total_steps) / prev_total_steps * 100)
@@ -852,21 +955,25 @@ async def get_today_stats(
 
     # 歩数が普段より少ない児童を検出（警告）
     warnings = []
+    week_start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=7)
+    weekly_stats = {
+        child_id: (record_count, total_week_steps)
+        for child_id, record_count, total_week_steps in (await dbsession.execute(
+            sqlalchemy.select(
+                database_models.SingleChildData.child_id,
+                sqlalchemy.func.count(),
+                sqlalchemy.func.sum(database_models.SingleChildData.steps)
+            )
+            .where(database_models.SingleChildData.date >= week_start)
+            .group_by(database_models.SingleChildData.child_id)
+        )).all()
+    }
     for child_id_val, (name, steps_val, date_val) in latest_step_records.items():
         # この児童の過去7日間の平均を計算
-        week_start = datetime.datetime.now().replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ) - datetime.timedelta(days=7)
-        week_data = (await dbsession.execute(
-            sqlalchemy.select(database_models.SingleChildData)
-            .where(
-                database_models.SingleChildData.child_id == child_id_val,
-                database_models.SingleChildData.date >= week_start
-            )
-        )).scalars().all()
+        record_count, total_week_steps = weekly_stats.get(child_id_val, (0, 0))
 
-        if len(week_data) >= 3:
-            avg_weekly = sum(d.steps for d in week_data) / len(week_data)
+        if record_count >= 3:
+            avg_weekly = total_week_steps / record_count
             if avg_weekly > 0 and steps_val < avg_weekly * STEP_WARNING_RATIO:
                 warnings.append(http_models.StepWarning(
                     child_id=child_id_val,
@@ -1362,34 +1469,44 @@ async def get_ml_behavior_result(
     """ 単独児童に関する最新の推論結果を返却する。 """
     record = (await dbsession.scalar(
             sqlalchemy.select(database_models.ChildBehaviorDataEvaluationHistory)
-            .where(
-                database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id
-            )
+            .where(database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id)
             .order_by(sqlalchemy.desc(database_models.ChildBehaviorDataEvaluationHistory.date))
             .limit(1)
     ))
     if not record:
         raise fastapi.exceptions.HTTPException(404, "Record not found.")
-    return http_models.MLSingleResult(
-            status="ok",
-            date=record.date,
-            behavior_acce=record.behavior_acce,
-            behavior_acce_confidence=record.behavior_acce_confidence,
-            behavior_pedo=record.behavior_pedo,
-            behavior_pedo_confidence=record.behavior_pedo_confidence,
-            activity_level=record.activity,
-            activity_confidence=record.activity_confidence,
-            baseline_steps_10min_median=record.baseline_steps_10min_median,
-            baseline_steps_10min_mad_scale=record.baseline_steps_10min_mad_scale,
-            baseline_activity_mean_proxy_median=record.baseline_activity_mean_proxy_median,
-            baseline_activity_mean_proxy_mad_scale=record.baseline_activity_mean_proxy_mad_scale,
-            baseline_acc_std_median=record.baseline_acc_std_median,
-            baseline_acc_std_mad_scale=record.baseline_acc_std_mad_scale,
-            baseline_gyro_mean_median=record.baseline_gyro_mean_median,
-            baseline_gyro_mean_mad_scale=record.baseline_gyro_mean_mad_scale,
-            baseline_mag_mean_median=record.baseline_mag_mean_median,
-            baseline_mag_mean_mad_scale=record.baseline_mag_mean_mad_scale
-    )
+    
+    return {
+        "status": "ok",
+
+        # Progress側との同期用。（意味は処理済みデータ境界）
+        "date": record.date,
+
+        # Freshness用
+        "evaluated_at": (
+            ml.latest_behavior_evaluated_at[child_id].isoformat()
+            if child_id in ml.latest_behavior_evaluated_at
+            else None
+        ),
+
+        "behavior_acce": record.behavior_acce,
+        "behavior_acce_confidence": record.behavior_acce_confidence,
+        "behavior_pedo": record.behavior_pedo,
+        "behavior_pedo_confidence": record.behavior_pedo_confidence,
+        "activity_level": record.activity,
+        "activity_confidence": record.activity_confidence,
+
+        "baseline_steps_10min_median": record.baseline_steps_10min_median,
+        "baseline_steps_10min_mad_scale": record.baseline_steps_10min_mad_scale,
+        "baseline_activity_mean_proxy_median": record.baseline_activity_mean_proxy_median,
+        "baseline_activity_mean_proxy_mad_scale": record.baseline_activity_mean_proxy_mad_scale,
+        "baseline_acc_std_median": record.baseline_acc_std_median,
+        "baseline_acc_std_mad_scale": record.baseline_acc_std_mad_scale,
+        "baseline_gyro_mean_median": record.baseline_gyro_mean_median,
+        "baseline_gyro_mean_mad_scale": record.baseline_gyro_mean_mad_scale,
+        "baseline_mag_mean_median": record.baseline_mag_mean_median,
+        "baseline_mag_mean_mad_scale": record.baseline_mag_mean_mad_scale
+    }
 
 @app.get("/api/ml/anomaly/{child_id}", tags=["API"])
 async def get_ml_anomaly_result(child_id: int):
