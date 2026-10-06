@@ -81,7 +81,6 @@ def migrate_database() -> None:
     alembic_config = Config(str(project_root / "alembic.ini"))
     command.upgrade(alembic_config, "head")
 
-
 @app.on_event("startup")
 async def apply_database_migrations() -> None:
     """起動処理を止めないよう、マイグレーションを別スレッドで実行する。"""
@@ -112,7 +111,6 @@ def hash_password(password: str, salt: bytes | None = None) -> bytes:
     )
     return salt.hex().encode() + b":" + digest.hex().encode()
 
-
 def verify_password(password: str, stored: bytes) -> bool:
     """保存済みのソルトを使って再計算し、ハッシュを比較する。"""
     try:
@@ -121,7 +119,6 @@ def verify_password(password: str, stored: bytes) -> bool:
         return secrets.compare_digest(expected.split(b":", 1)[1], digest_hex)
     except (ValueError, UnicodeDecodeError):
         return False
-
 
 async def current_teacher(
     credentials: typing.Annotated[
@@ -138,12 +135,10 @@ async def current_teacher(
         raise fastapi.HTTPException(401, "ログイン情報が無効です")
     return teacher
 
-
 TeacherDep: typing.TypeAlias = typing.Annotated[
     database_models.Teacher,
     fastapi.Depends(current_teacher)
 ]
-
 
 # ===== 認証 =====
 
@@ -184,7 +179,6 @@ async def login_teacher(
         status="ok", token=token, username=teacher.username, name=teacher.name
     )
 
-
 @app.post("/api/auth/logout", tags=["Auth"])
 async def logout_teacher(
     credentials: typing.Annotated[
@@ -197,7 +191,6 @@ async def logout_teacher(
     if credentials:
         sessions.pop(credentials.credentials, None)
     return http_models.Result(status="ok")
-
 
 @app.delete("/api/auth/account", tags=["Auth"])
 async def delete_account(
@@ -224,7 +217,6 @@ async def delete_account(
         sessions.pop(credentials.credentials, None)
     return http_models.Result(status="ok", msg="アカウントを削除しました")
 
-
 # ===== クラス管理 =====
 
 @app.get("/api/classes", tags=["Classes"])
@@ -246,7 +238,6 @@ async def list_classes(
             child_count=len(school_class.children),
         ) for school_class in classes],
     )
-
 
 @app.post("/api/classes", tags=["Classes"])
 async def create_class(
@@ -272,7 +263,6 @@ async def create_class(
         status="ok", class_id=school_class.class_id, name=school_class.name
     )
 
-
 @app.patch("/api/classes/{class_id:int}", tags=["Classes"])
 async def rename_class(
     class_id: int,
@@ -290,7 +280,6 @@ async def rename_class(
     school_class.name = name
     await dbsession.commit()
     return http_models.ClassResponse(status="ok", class_id=class_id, name=name)
-
 
 @app.delete("/api/classes/{class_id:int}", tags=["Classes"])
 async def delete_class(
@@ -321,7 +310,6 @@ async def delete_class(
         msg=f"クラス「{class_name}」を削除し、{unassigned_count}人を未所属にしました",
     )
 
-
 @app.patch("/api/children/{child_id:int}/class", tags=["Classes"])
 async def change_child_class(
     child_id: int,
@@ -348,7 +336,6 @@ def health() -> http_models.Result:
     """サーバーが応答可能であることを示す固定レスポンスを返す。"""
     return http_models.Result(status="ok")
 
-
 # ===== M5端末状態 =====
 
 @app.post("/api/device_status", tags=["API"])
@@ -363,7 +350,6 @@ async def receive_device_status(
         updated_at=datetime.datetime.now(),
     )
     return http_models.Result(status="ok")
-
 
 @app.get("/api/device_status", tags=["API"])
 async def list_device_statuses() -> http_models.DeviceStatusListResponse:
