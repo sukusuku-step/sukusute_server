@@ -293,7 +293,7 @@ function formatAnomalyChange(feature, comparison) {
 
 // behavior/activity、ベースライン、児童間distance/関連度をまとめて取得する。
 // 推論自体が10分単位なので、5秒ごとの歩数更新とは分けて30秒に一度だけ取得する。
-async function loadMlResults(force = false) {
+async function loadMlResults(force = false, onProgress = null) {
     const childIds = state.children.map((child) => Number(child.child_id)).sort((a, b) => a - b);
     const signature = childIds.join(',');
     const now = Date.now();
@@ -317,18 +317,44 @@ async function loadMlResults(force = false) {
     }));
 
     const relationRequests = [];
+
+    const totalRelations = childIds.length * (childIds.length - 1) / 2;
+
+    let completedRelations = 0;
+
+    if (onProgress) {
+        onProgress(0, totalRelations);
+    }
+
     for (let i = 0; i < childIds.length; i += 1) {
         for (let j = i + 1; j < childIds.length; j += 1) {
             const childId1 = childIds[i];
             const childId2 = childIds[j];
+
             relationRequests.push((async () => {
-                const result = await apiRequestOptional(
-                    `/api/ml/relation?child_id_1=${encodeURIComponent(childId1)}&child_id_2=${encodeURIComponent(childId2)}`
-                );
-                nextRelations[relationKey(childId1, childId2)] = result;
+                try {
+                    const result =
+                        await apiRequestOptional(
+                            `/api/ml/relation?child_id_1=${encodeURIComponent(childId1)}&child_id_2=${encodeURIComponent(childId2)}`
+                        );
+
+                    nextRelations[
+                        relationKey(childId1, childId2)
+                    ] = result;
+                } finally {
+                    completedRelations += 1;
+
+                    if (onProgress) {
+                        onProgress(
+                            completedRelations,
+                            totalRelations
+                        );
+                    }
+                }
             })());
         }
     }
+
     await Promise.all(relationRequests);
 
     state.mlBehavior = nextBehavior;
@@ -336,6 +362,7 @@ async function loadMlResults(force = false) {
     state.mlRelations = nextRelations;
     state.mlUpdatedAt = now;
     state.mlChildSignature = signature;
+
     renderModelAnomalyWarnings();
 }
 
@@ -1597,11 +1624,64 @@ async function openRelatedNetworkModal() {
     openModal('relatedNetworkModal');
 
     const graph = document.getElementById('relatedNetworkGraph');
-    graph.innerHTML = '<p>データを読み込み中...</p>';
+
+    graph.innerHTML = `
+        <div class="network-loading">
+            <strong>
+                関係データを読み込み中...
+            </strong>
+
+            <div>
+                <progress
+                    id="relatedNetworkProgress"
+                    value="0"
+                    max="100"
+                ></progress>
+            </div>
+
+            <span
+                id="relatedNetworkProgressText"
+            >
+                0%
+            </span>
+        </div>
+    `;
 
     try {
-        await loadMlResults(true);
+        await loadMlResults(
+            true,
+
+            (completed, total) => {
+                const progress =
+                    document.getElementById(
+                        'relatedNetworkProgress'
+                    );
+
+                const text =
+                    document.getElementById(
+                        'relatedNetworkProgressText'
+                    );
+
+                if (!progress || !text) {
+                    return;
+                }
+
+                const percentage =
+                    total > 0
+                        ? completed / total * 100
+                        : 100;
+
+                progress.value = percentage;
+
+                text.textContent =
+                    total > 0
+                        ? `${percentage.toFixed(1)}%（${completed} / ${total}）`
+                        : '100%';
+            }
+        );
+
         renderRelatedNetwork();
+
     } catch (error) {
         console.error(
             '[ui] related network failed',
