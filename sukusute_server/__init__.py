@@ -461,6 +461,21 @@ async def push_csv(
     parsed_distance_children: list[int] = []
     for child in distance_children:
         parsed_distance_children.append(int(child[9:]))
+
+    # CSVヘッダーに記載された相手児童のIDは、登録解除済み/未登録の場合がある。
+    # 存在しないchild_idをdistance_data_rowsに含めるとFK違反でinsert全体が失敗するため、
+    # 事前に実在するchild_idだけに絞り込む。
+    existing_distance_children = set((await dbsession.execute(
+        sqlalchemy.select(database_models.Child.child_id)
+        .where(database_models.Child.child_id.in_(set(parsed_distance_children)))
+    )).scalars().all())
+    missing_distance_children = set(parsed_distance_children) - existing_distance_children
+    if missing_distance_children:
+        logger.warning(
+            "push_csv: child_id=%s から送信されたdistanceの相手child_id %s は存在しないため無視します。",
+            child_id, sorted(missing_distance_children),
+        )
+
     child_data_rows = []
     distance_data_rows = []
     for row in parsed_csv:
@@ -478,6 +493,8 @@ async def push_csv(
             if not distance.strip():
                 continue
             other_child_id = parsed_distance_children[i]
+            if other_child_id not in existing_distance_children:
+                continue
             distance_data_rows.append({
                 "child_id_1": min(child_id, other_child_id),
                 "child_id_2": max(child_id, other_child_id),
