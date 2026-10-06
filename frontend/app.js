@@ -1494,8 +1494,19 @@ async function submitLogin(event) {
     if (button.disabled) return;
     button.disabled = true;
     setMessage('loginMessage', '');
+
     try {
-        await login(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
+        await login(
+            document.getElementById('loginUsername').value, 
+            document.getElementById('loginPassword').value
+        );
+
+        // 通知登録に失敗しただけで「ログイン失敗」となるのを防ぐ
+        try {
+            await subscribeNotify();
+        } catch (error) {
+            console.warn('[ui] notification subscription failed', error);
+        }
     } catch (error) {
         setMessage('loginMessage', error.message);
     } finally {
@@ -1824,18 +1835,18 @@ async function subscribe_notify() {
             console.error("not granted......")
             return;
         };
-      
+
         await navigator.serviceWorker.register("service-worker.js");
-      
+
         let ready = await navigator.serviceWorker.ready;
-      
+
         if (!await ready.pushManager.getSubscription()) {
-            pubkey = await apiRequest("/api/notify/key", {method: "GET"});
-            sub = await ready.pushManager.subscribe({
+            const pubkey = await apiRequest("/api/notify/key", {method: "GET"});
+            const sub = await ready.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: Uint8Array.fromBase64(pubkey.key, {alphabet: "base64url"})
             });
-          
+
             await apiRequest("/api/notify/subscribe", {
                 method: "POST",
                 body: JSON.stringify(sub.toJSON())
