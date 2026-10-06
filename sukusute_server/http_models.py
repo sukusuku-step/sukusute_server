@@ -313,3 +313,10 @@ class MLRelationResult(Result):
     evaluated: database_models.ChildDistanceEvaluationEnum
     confidence: float
     score: float
+
+class NotificationKey(Result):
+    model_config = pydantic.ConfigDict(
+        val_json_bytes="base64",
+        ser_json_bytes="base64"
+    )
+    key: bytes

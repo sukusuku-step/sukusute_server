@@ -1817,3 +1817,31 @@ refreshTimer = setInterval(() => {
         loadDashboard();
     }
 }, 10000);
+
+async function subscribe_notify() {
+    document.getElementById('loginButton').addEventListener("click", async () => {
+        if (await Notification.requestPermission() !== "granted") {
+            console.error("not granted......")
+            return;
+        };
+      
+        await navigator.serviceWorker.register("service-worker.js");
+      
+        let ready = await navigator.serviceWorker.ready;
+      
+        if (!await ready.pushManager.getSubscription()) {
+            pubkey = await apiRequest("/api/notify/key", {method: "GET"});
+            sub = await ready.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: Uint8Array.fromBase64(pubkey.key, {alphabet: "base64url"})
+            });
+          
+            await apiRequest("/api/notify/subscribe", {
+                method: "POST",
+                body: JSON.stringify(sub.toJSON())
+            });
+        }
+    });
+}
+
+subscribe_notify();

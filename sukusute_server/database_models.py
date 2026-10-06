@@ -11,6 +11,7 @@ import collections.abc
 
 import fastapi
 from sqlalchemy import ForeignKey, CheckConstraint, Tuple, select, SQLColumnExpression, or_
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, relationship, mapped_column
@@ -271,4 +272,21 @@ class Settings(Base):
     baseline_max_days: Mapped[int]
     relatedness_max_history: Mapped[int]
     relatedness_max_steps_minutes: Mapped[int]
+
+class WebPushVAPIDKeys(Base):
+    """ VAPID ECC鍵の保管 """
+    __tablename__ = "vapid_key"
+    __table_args__ = (
+        CheckConstraint("_ = 1", name="no_multiple_keys"),
+    )
+
+    _: Mapped[bool] = mapped_column(primary_key=True, default=1)
+    key_der: Mapped[bytes]
+
+class WebPushSubscriptionInfo(Base):
+    """ Web Push API 購読情報の保存 """
+    __tablename__ = "webpush_subinfo"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    subscription_info: Mapped[dict] = mapped_column(JSONB)
 
