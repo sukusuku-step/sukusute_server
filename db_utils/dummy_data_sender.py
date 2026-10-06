@@ -134,10 +134,7 @@ def generate_realistic_steps(device: DeviceState, cycle_count: int) -> int:
 
 def generate_realistic_distance(child_id_1: int, child_id_2: int, device1: DeviceState, device2: DeviceState) -> dict:
     """
-    2児童間の現実的な距離を生成（2-60mの範囲）
-    
-    距離データは双方向に送信される（A->BとB->A）
-    複数の子ども間の距離もシミュレート
+    2児童間のダミー距離を生成（0-14のランダムな整数）
     
     Args:
         child_id_1: 児童1のID
@@ -148,15 +145,11 @@ def generate_realistic_distance(child_id_1: int, child_id_2: int, device1: Devic
     Returns:
         距離データ（distanceを含む）
     """
-    # 2-60mの範囲（0.002km - 0.060km）
-    # 近い距離をより確率高く（正規分布に近い形状）
-    distance_m = random.gauss(30, 15)  # 平均30m、標準偏差15m
-    distance_m = max(2, min(60, distance_m))  # 2-60mにクリップ
-    distance_km = round(distance_m / 1000.0, 4)
+    distance = random.randint(0, 14)
     
     return {
-        "distance": distance_km,
-        "distance_m": distance_m,
+        "distance": distance,
+        "distance_m": distance,
     }
 
 
@@ -221,13 +214,8 @@ def send_device_data(
     if device.data_type in ("distance", "both"):
         # 距離データを追加（バックエンド形式: [{date, with_child, distance}]）
         # 複数デバイスとの距離データを一度に送信
-        # 20m-60mの範囲の距離を2-4個の他デバイスとの距離として送信
-        
-        # ランダムに2-4人の他デバイスを選択
-        other_devices = random.sample(
-            [d for d in devices if d.device_id != device.device_id],
-            min(random.randint(2, 4), len(devices) - 1)
-        )
+        # 自分以外の全員との距離（0-14のランダムな値）を送信
+        other_devices = [d for d in devices if d.device_id != device.device_id]
         
         distances_list = []
         for other_device in other_devices:
