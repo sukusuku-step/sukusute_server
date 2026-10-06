@@ -529,9 +529,7 @@ async function loadDashboard() {
                 );
             }),
 
-            apiRequest(
-                '/api/device_status'
-            ).then((deviceStatuses) => {
+            apiRequest('/api/device_status').then((deviceStatuses) => {
                 state.deviceStatuses =
                     Object.fromEntries(
                         (
@@ -546,6 +544,7 @@ async function loadDashboard() {
                     );
 
                 renderStudents();
+                renderModelAnomalyWarnings();
             }),
 
             (async () => {
@@ -1215,28 +1214,82 @@ function renderRanking() {
 function renderModelAnomalyWarnings() {
     const panel = document.getElementById('modelAnomalyPanel');
     const list = document.getElementById('modelAnomalyList');
-    const items = state.children.flatMap((child) => {
-        const anomaly = state.mlAnomalies[child.child_id];
-        if (anomaly?.warning !== true) return [];
-        const reasons = Object.entries(anomaly.comparisons || {})
-            .filter(([, comparison]) => comparison.warning === true)
-            .map(([feature, comparison]) =>
-                `<li>${escapeHtml(formatAnomalyChange(feature, comparison))}</li>`
-            );
-        if (!reasons.length) return [];
-        return [`<li class="model-anomaly-item">
-            <button class="model-anomaly-child-link" type="button" data-anomaly-child="${child.child_id}">${escapeHtml(child.name || `子ども${child.child_id}`)}</button>
-            <ul>${reasons.join('')}</ul>
-        </li>`];
-    });
+    const items = [];
+
+    for (const child of state.children) {
+        const childId = Number(child.child_id);
+        const childName = escapeHtml(child.name || `子ども${childId}`);
+        const anomaly = state.mlAnomalies[childId];
+
+        if (anomaly?.warning === true) {
+            items.push(`
+                <li class="model-anomaly-item">
+                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
+                        ${childName}
+                    </button>
+                    <span>⚠ 行動状態</span>
+                </li>
+            `);
+        }
+
+        const deviceStatus = state.deviceStatuses[childId];
+
+        const battery = Number(deviceStatus?.battery);
+
+        // 20%以下のバッテリー残量で警告
+        if (
+            deviceStatus
+            && Number.isFinite(battery)
+            && battery <= 20
+        ) {
+            items.push(`
+                <li class="model-anomaly-item">
+                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
+                        ${childName}
+                    </button>
+                    <span>⚠ バッテリー</span>
+                </li>
+            `);
+        }
+
+        const wifiRssi = Number(deviceStatus?.wifi_rssi);
+
+        // 棒が1本以下の電波強度で警告
+        if (
+            deviceStatus
+            && Number.isFinite(wifiRssi)
+            && getWifiSignalLevel(wifiRssi) <= 1
+        ) {
+            items.push(`
+                <li class="model-anomaly-item">
+                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
+                        ${childName}
+                    </button>
+                    <span>⚠ 電波強度</span>
+                </li>
+            `);
+        }
+    }
+
     list.innerHTML = items.length
         ? items.join('')
-        : '<li class="model-anomaly-clear">現在、警告はありません。</li>';
-    document.getElementById('modelAnomalyCount').textContent = items.length
-        ? `${items.length}人に異常を検知`
-        : '警告なし';
+        : `
+            <li class="model-anomaly-clear">
+                現在、警告はありません。
+            </li>
+        `;
+
+    document.getElementById('modelAnomalyCount').textContent =
+        items.length
+            ? `${items.length}件`
+            : '警告なし';
+
     panel.hidden = false;
-    panel.classList.toggle('is-clear', items.length === 0);
+
+    panel.classList.toggle(
+        'is-clear',
+        items.length === 0
+    );
 }
 
 // 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。
