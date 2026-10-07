@@ -807,25 +807,21 @@ function renderStudents() {
         staleDetails.id = 'staleStudentDetails';
         staleDetails.className = 'stale-student-details';
 
-        staleDetails.innerHTML = `<summary></summary>`;
+        staleDetails.innerHTML = `
+            <summary></summary>
+            <div
+                id="staleStudentGrid"
+                class="student-grid"
+            ></div>
+        `;
 
-        grid.insertAdjacentElement('beforebegin', staleDetails);
-
-        staleDetails.addEventListener('toggle', () => {
-            grid.querySelectorAll('[data-student-card]').forEach((card) => {
-                const childId = Number(card.dataset.studentCard);
-
-                const isStale = isFreshnessStale(
-                    state.dataFreshness.childData[childId],
-                    SENSOR_DATA_STALE_MS
-                );
-
-                if (isStale) {
-                    card.hidden = !staleDetails.open;
-                }
-            });
-        });
+        grid.insertAdjacentElement(
+            'afterend',
+            staleDetails
+        );
     }
+
+    const staleGrid = document.getElementById('staleStudentGrid');
 
     staleDetails.querySelector('summary').textContent = `1分以上データの更新が無い子ども（${staleChildIds.size}人）`;
 
@@ -874,8 +870,16 @@ function renderStudents() {
     });
 
     const visibleIds = new Set(sorted.map((child) => child.child_id));
-    grid.querySelectorAll('[data-student-card]').forEach((card) => {
-        if (!visibleIds.has(Number(card.dataset.studentCard))) card.remove();
+
+    [
+        ...grid.querySelectorAll('[data-student-card]'),
+        ...staleGrid.querySelectorAll('[data-student-card]')
+    ].forEach((card) => {
+        if (
+            !visibleIds.has(Number(card.dataset.studentCard))
+        ) {
+            card.remove();
+        }
     });
     
     sorted.forEach((child, index) => {
@@ -912,7 +916,12 @@ function renderStudents() {
                                 '<span class="teacher-badge" title="先生の端末">🧑\u200d🏫 先生</span>' : ''
                             }`;
         
-        let card = grid.querySelector(`[data-student-card="${child.child_id}"]`);
+        let card = grid.querySelector(
+                `[data-student-card="${child.child_id}"]`
+            )
+            || staleGrid.querySelector(`[data-student-card="${child.child_id}"]`
+        );
+
         if (!card) {
             card = document.createElement('article');
             card.className = 'student-card';
@@ -933,7 +942,7 @@ function renderStudents() {
 
         const childIsStale = staleChildIds.has(child.child_id);
 
-        card.hidden = childIsStale && !staleDetails.open;
+        const targetGrid = childIsStale ? staleGrid : grid;
 
         const latestDistanceDataAt = state.dataFreshness.childDistance[child.child_id];
         const nearestIsStale = isFreshnessStale(latestDistanceDataAt, SENSOR_DATA_STALE_MS);
@@ -987,7 +996,6 @@ function renderStudents() {
         const completion = state.dataFreshness.mlCompleted?.[child.child_id];
 
         const confirmedFreshness = state.mlBehaviorFreshness[child.child_id];
-
 
         const behaviorTime = behavior
             ? parseTimestamp(behavior.date)
@@ -1131,10 +1139,11 @@ function renderStudents() {
             state.mlDetailOpenStates[child.child_id].relation = relationDetails.open;
         });
 
-        const referenceNode = grid.children[index];
-        if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
+        targetGrid.appendChild(card);
+        
         animateStepValue(card.querySelector('.step-number'), child.child_id, steps);
     });
+
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         const previous = previousPositions.get(Number(card.dataset.studentCard));
         if (!previous) return;
@@ -1151,6 +1160,7 @@ function renderStudents() {
         });
         animation.id = 'student-reorder';
     });
+
     ensureSignageAutoScroll();
     renderOpenStudentDetailModal();
 }
@@ -1167,8 +1177,10 @@ function scrollSignagePage() {
         stopSignageAutoScroll();
         return;
     }
+
     const grid = document.getElementById('studentGrid');
     const maxScroll = grid.scrollHeight - grid.clientHeight;
+
     if (maxScroll <= 1) {
         stopSignageAutoScroll();
         signageScrollRetryTimer = setTimeout(() => {
