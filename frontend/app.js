@@ -362,7 +362,27 @@ async function loadMlResults(force = false, onProgress = null) {
 
     state.mlBehavior = nextBehavior;
     state.mlAnomalies = nextAnomalies;
-    state.mlRelations = nextRelations;
+
+    const heldChildIds = new Set(
+        Object.keys(state.mlProgressHold).map(Number)
+    );
+
+    const mergedRelations = {};
+
+    for (const [key, nextRelation] of Object.entries(nextRelations)) {
+        const [childId1, childId2] = key.split(':').map(Number);
+
+        const isHeld = heldChildIds.has(childId1) || heldChildIds.has(childId2);
+
+        if (isHeld && state.mlRelations[key] !== undefined) {
+            mergedRelations[key] = state.mlRelations[key];
+        } else {
+            mergedRelations[key] = nextRelation;
+        }
+    }
+
+    state.mlRelations = mergedRelations;
+
     state.mlUpdatedAt = now;
     state.mlChildSignature = signature;
 

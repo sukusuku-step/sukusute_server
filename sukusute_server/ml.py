@@ -309,10 +309,12 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                     record.gx, record.gy, record.gz,
                     record.mx, record.my, record.mz
                 ) for record in baseline_records), dtype=(np.float32, 10))
+
                 try:
                     baseline_result = (await run_ml_inference(
                         sukusute_machine_learning.utils.baseline.build_baseline,
-                        baseline_input
+                        baseline_input,
+                        BASELINE_MIN_DATA_MINUTES / 60
                     ))["features"]
                 except (ValueError, TypeError, KeyError) as error:
                     logger.warning(
