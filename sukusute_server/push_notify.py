@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import sqlalchemy
 import pywebpush
@@ -6,6 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption, PublicFormat, load_der_private_key
 
 import sukusute_server.database_models
+logger = logging.getLogger(__name__)
 
 async def get_vapid_key(dbsession: sukusute_server.database_models.SessionDep) -> ec.EllipticCurvePrivateKey:
     if rec := await dbsession.scalar(sqlalchemy.select(sukusute_server.database_models.WebPushVAPIDKeys)):
@@ -29,10 +31,13 @@ async def send_notification(dbsession: sukusute_server.database_models.SessionDe
     key = await get_vapid_key(dbsession)
     pywebpush.Vapid()
     for subscription in await dbsession.scalars(sqlalchemy.select(sukusute_server.database_models.WebPushSubscriptionInfo)):
-        await asyncio.to_thread(pywebpush.webpush,
-            subscription_info=subscription.subscription_info,
-            data=msg,
-            vapid_private_key=pywebpush.Vapid(private_key=key),
-            vapid_claims={"sub": "mailto:okaits@okaits7534.net"} # 何らかのメールアドレスを指定する必要があるので、とりあえずこれで……
-        )
+        try:
+            await asyncio.to_thread(pywebpush.webpush,
+                subscription_info=subscription.subscription_info,
+                data=msg,
+                vapid_private_key=pywebpush.Vapid(private_key=key),
+                vapid_claims={"sub": "mailto:okaits@okaits7534.net"} # 何らかのメールアドレスを指定する必要があるので、とりあえずこれで……
+            )
+        except pywebpush.WebPushException as exc:
+            logger.error(f"通知送信に失敗しました: {exc}")
 
