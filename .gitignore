@@ -15,3 +15,6 @@ data.sqlite
 
 # model
 models/
+
+# JavaScript library
+frontend/node_modules/

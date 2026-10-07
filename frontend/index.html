@@ -74,7 +74,7 @@
                     <section id="modelAnomalyPanel" class="model-anomaly-panel" aria-live="polite">
                         <div class="model-anomaly-heading">
                             <span class="model-anomaly-mark" aria-hidden="true">!</span>
-                            <h2>モデル異常検知</h2>
+                            <h2>子どもの異常検知</h2>
                             <span id="modelAnomalyCount" class="model-anomaly-count"></span>
                         </div>
                         <ul id="modelAnomalyList" class="model-anomaly-list"></ul>
@@ -115,7 +115,7 @@
     <div id="modalLayer" class="modal-layer is-hidden">
         <section id="configModal" class="modal-card config-modal is-hidden">
             <button class="modal-close" data-close-modal type="button" aria-label="コンフィグを閉じる">×</button>
-            <h2>コンフィグ</h2>
+            <h2>設定項目</h2>
             <p class="modal-caption">学習モデルによる推論・異常検知システムに関する設定を変更できます。</p>
             <form id="configForm" class="config-form">
                 <label>
@@ -218,7 +218,7 @@
             <p class="modal-caption">所属クラスと先生用端末の設定を変更できます。</p>
             <div class="student-manage-toolbar">
                 <span id="studentManageCount" class="table-count">0人</span>
-                <button id="openStudentDeleteModalButton" class="danger-button" type="button">子どもを削除...</button>
+                <button id="openStudentDeleteModalButton" class="danger-button" type="button">子どもを削除</button>
             </div>
             <div id="studentManageMessage" class="form-message" role="status"></div>
             <div class="student-table-wrap">
@@ -247,6 +247,7 @@
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
+    <script src="wanakana.min.js"></script>
     <script src="app.js?v=20261001-date-device-status-fix1"></script>
 </body>
 </html>

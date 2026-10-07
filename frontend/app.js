@@ -4,25 +4,60 @@ const state = {
     classes: [],
     selectedClassId: null,
     children: [],
+
     steps: {},
     stepIncreaseRanking: [],
     nearestNames: {},
+
     deviceStatuses: {},
+
+    // DBデータの実際の最終更新時刻
+    dataFreshness: {
+        serverStartedAt: null,
+        childData: {},
+        childDistance: {},
+        mlProgress: {},
+        mlCompleted: {}
+    },
+
     mlBehavior: {},
     mlAnomalies: {},
     mlRelations: {},
+
+    mlBehaviorFreshness: {},
+
+    // ML推論完了検出用
+    mlCompletionSeen: {},
+    mlProcessedThrough: {},
+
+    // 推論結果のUI反映が終わるまで100%表示を保持
+    mlProgressHold: {},
+
     mlDetailOpenStates: {},
+
     mlUpdatedAt: 0,
     mlChildSignature: '',
+
     selectedDate: new Date(),
-    // 先生としてつけている端末かどうかは表示用のみの情報なのでブラウザに保存する。
-    teacherFlags: new Set(JSON.parse(localStorage.getItem('sukusuteTeacherFlags') || '[]'))
+
+    teacherFlags: new Set(
+        JSON.parse(
+            localStorage.getItem(
+                'sukusuteTeacherFlags'
+            ) || '[]'
+        )
+    )
 };
 
 const DISPLAY_MODE_KEY = 'sukusuteDisplayMode';
 
-// 画面表示に使う歩数ルール。カードと警告で同じ基準を使う。
 const DEVICE_STATUS_STALE_MS = 60_000;
+
+// 歩数・最も近い人
+const SENSOR_DATA_STALE_MS = 60_000;
+
+// ML推論
+const ML_RESULT_STALE_MS = 15 * 60_000;
 const ML_REFRESH_INTERVAL_MS = 30_000;
 
 const ANOMALY_FEATURE_LABELS = {
@@ -55,6 +90,7 @@ setDisplayMode(localStorage.getItem(DISPLAY_MODE_KEY) || 'horizontal');
 
 let refreshTimer = null;
 let refreshInProgress = false;
+let openStudentDetailChildId = null;
 
 // 児童ごとのスロット風アニメーションの進行状況（連続更新時に前回分を打ち切るために使う）。
 const stepAnimationState = new Map();
@@ -180,6 +216,55 @@ function formatConfidence(value) {
     return number <= 1 ? `${(number * 100).toFixed(1)}%` : `${number.toFixed(1)}%`;
 }
 
+function parseTimestamp(value) {
+    if (!value) return null;
+
+    const timestamp = Date.parse(value);
+
+    return Number.isFinite(timestamp)
+        ? timestamp
+        : null;
+}
+
+function getEffectiveFreshnessAge(valueTimestamp) {
+    const now = Date.now();
+    const dataTime = parseTimestamp(valueTimestamp);
+    const serverStartedAt = parseTimestamp(state.dataFreshness.serverStartedAt);
+
+    if (serverStartedAt === null) {
+        return 0;
+    }
+
+    // サーバ起動時点からDBの値を読んでいるだけなら色を変える。
+    if (dataTime === null) {
+        return Infinity;
+    }
+
+    if (dataTime <= serverStartedAt) {
+        return Infinity;
+    }
+
+    return Math.max(0, now - dataTime);
+}
+
+function isFreshnessStale(valueTimestamp, staleMs) {
+    return (
+        getEffectiveFreshnessAge(valueTimestamp) >= staleMs
+    );
+}
+
+function isMlResultStale(valueTimestamp) {
+    const resultTime = parseTimestamp(valueTimestamp);
+    if (resultTime === null) return true;
+    return Math.max(0, Date.now() - resultTime) >= ML_RESULT_STALE_MS;
+}
+
+function staleClass(stale) {
+    return stale
+        ? ' is-stale-value'
+        : '';
+}
+
 function formatAnomalyChange(feature, comparison) {
     const label = ANOMALY_FEATURE_LABELS[feature] || feature;
     const current = Number(comparison.current);
@@ -211,7 +296,7 @@ function formatAnomalyChange(feature, comparison) {
 
 // behavior/activity、ベースライン、児童間distance/関連度をまとめて取得する。
 // 推論自体が10分単位なので、5秒ごとの歩数更新とは分けて30秒に一度だけ取得する。
-async function loadMlResults(force = false) {
+async function loadMlResults(force = false, onProgress = null) {
     const childIds = state.children.map((child) => Number(child.child_id)).sort((a, b) => a - b);
     const signature = childIds.join(',');
     const now = Date.now();
@@ -235,29 +320,125 @@ async function loadMlResults(force = false) {
     }));
 
     const relationRequests = [];
+
+    const totalRelations = childIds.length * (childIds.length - 1) / 2;
+
+    let completedRelations = 0;
+
+    if (onProgress) {
+        onProgress(0, totalRelations);
+    }
+
     for (let i = 0; i < childIds.length; i += 1) {
         for (let j = i + 1; j < childIds.length; j += 1) {
             const childId1 = childIds[i];
             const childId2 = childIds[j];
+
             relationRequests.push((async () => {
-                const result = await apiRequestOptional(
-                    `/api/ml/relation?child_id_1=${encodeURIComponent(childId1)}&child_id_2=${encodeURIComponent(childId2)}`
-                );
-                nextRelations[relationKey(childId1, childId2)] = result;
+                try {
+                    const result =
+                        await apiRequestOptional(
+                            `/api/ml/relation?child_id_1=${encodeURIComponent(childId1)}&child_id_2=${encodeURIComponent(childId2)}`
+                        );
+
+                    nextRelations[
+                        relationKey(childId1, childId2)
+                    ] = result;
+                } finally {
+                    completedRelations += 1;
+
+                    if (onProgress) {
+                        onProgress(
+                            completedRelations,
+                            totalRelations
+                        );
+                    }
+                }
             })());
         }
     }
+
     await Promise.all(relationRequests);
 
     state.mlBehavior = nextBehavior;
     state.mlAnomalies = nextAnomalies;
-    state.mlRelations = nextRelations;
+
+    const heldChildIds = new Set(
+        Object.keys(state.mlProgressHold).map(Number)
+    );
+
+    const mergedRelations = {};
+
+    for (const [key, nextRelation] of Object.entries(nextRelations)) {
+        const [childId1, childId2] = key.split(':').map(Number);
+
+        const isHeld = heldChildIds.has(childId1) || heldChildIds.has(childId2);
+
+        if (isHeld && state.mlRelations[key] !== undefined) {
+            mergedRelations[key] = state.mlRelations[key];
+        } else {
+            mergedRelations[key] = nextRelation;
+        }
+    }
+
+    state.mlRelations = mergedRelations;
+
     state.mlUpdatedAt = now;
     state.mlChildSignature = signature;
+
     renderModelAnomalyWarnings();
 }
 
-// 日付をAPIのクエリパラメータ形式へ変換する。
+async function refreshCompletedBehavior(childId, expectedProcessedThrough) {
+    const expectedTime = parseTimestamp(expectedProcessedThrough);
+
+    if (expectedTime === null) {
+        return false;
+    }
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const [behavior, anomaly] = await Promise.all([
+            apiRequestOptional(`/api/ml/behavior/${childId}`),
+            apiRequestOptional(`/api/ml/anomaly/${childId}`)
+        ]);
+
+        const behaviorTime = behavior
+            ? parseTimestamp(behavior.date)
+            : null;
+
+        if (
+            behavior
+            && behaviorTime !== null
+            && behaviorTime >= expectedTime
+        ) {
+            state.mlBehavior[childId] = behavior;
+            state.mlAnomalies[childId] = anomaly;
+            state.mlBehaviorFreshness[childId] = {
+                date: behavior.date,
+                evaluatedAt: new Date().toISOString(),
+            };
+
+            renderModelAnomalyWarnings();
+
+            return true;
+        }
+
+        await new Promise(
+            (resolve) => setTimeout(resolve, 250)
+        );
+    }
+
+    console.warn(
+        '[ui] new ML behavior was not visible after completion',
+        {
+            childId,
+            expectedProcessedThrough
+        }
+    );
+
+    return false;
+}
+
 function dateQuery(date) {
     return `year=${date.getFullYear()}&month=${date.getMonth() + 1}&day=${date.getDate()}`;
 }
@@ -268,9 +449,6 @@ function isToday(date) {
         && date.getMonth() === now.getMonth()
         && date.getDate() === now.getDate();
 }
-
-// ===== ログイン画面とダッシュボード初期化 =====
-// ログインAPIを呼び、成功したトークンをブラウザへ保存する。
 
 async function login(username, password) {
     const result = await apiRequest('/api/auth/login', {
@@ -283,7 +461,6 @@ async function login(username, password) {
     await loadClasses();
 }
 
-// ダッシュボードを表示し、ログイン画面を隠す。
 function showApp() {
     document.getElementById('loginView').classList.add('is-hidden');
     document.getElementById('appView').classList.remove('is-hidden');
@@ -323,9 +500,8 @@ async function openConfigModal() {
     openModal('configModal');
 }
 
-// ログイン画面を表示し、認証が必要な画面を隠す。
 function showLogin() {
-    closeMenu(); // ログアウト時は必ずメニュー欄を閉じる
+    closeMenu();
 
     document.getElementById('loginView').classList.remove('is-hidden');
     document.getElementById('appView').classList.add('is-hidden');
@@ -336,7 +512,6 @@ function showLogin() {
     }
 }
 
-// クラス一覧を読み込み、選択欄を更新してから児童データを再取得する。
 async function loadClasses() {
     console.info('[ui] loading classes');
     const result = await apiRequest('/api/classes');
@@ -351,9 +526,6 @@ async function loadClasses() {
     await loadDashboard();
 }
 
-// ===== ダッシュボードのデータ取得と描画 =====
-// 選択中のクラスと日付に対応する児童・歩数を取得して画面を更新する。
-
 async function loadDashboard() {
     if (refreshInProgress) return;
     refreshInProgress = true;
@@ -363,43 +535,223 @@ async function loadDashboard() {
     });
     setMessage('refreshMessage', '更新中...');
     const classQuery = state.selectedClassId ? `?class_id=${state.selectedClassId}` : '';
+
     try {
         const children = await apiRequest(`/api/children${classQuery}`);
         state.children = children.children || [];
         state.stepIncreaseRanking = [];
-        // 歩数や端末状態のAPIを待たず、DBの児童一覧を先に表示する。
+
         renderStudents();
         renderRanking();
-        // 歩数と端末状態は、取得できた方から独立して画面へ反映する。
+
         const refreshResults = await Promise.allSettled([
-            apiRequest(`/api/stats/today?${dateQuery(state.selectedDate)}`).then((stats) => {
+            apiRequest(
+                `/api/stats/today?${dateQuery(
+                    state.selectedDate
+                )}`
+            ).then((stats) => {
                 state.steps = Object.fromEntries(
-                    (stats.student_ranking || []).map((item) => [item.child_id, item.steps || 0])
+                    (stats.student_ranking || []).map(
+                        (item) => [
+                            item.child_id,
+                            item.steps || 0
+                        ]
+                    )
                 );
-                state.stepIncreaseRanking = stats.step_increase_ranking || [];
+
+                state.stepIncreaseRanking =
+                    stats.step_increase_ranking || [];
+
                 state.nearestNames = Object.fromEntries(
-                    (stats.nearest_children || []).map((item) => [item.child_id, item.name])
+                    (stats.nearest_children || []).map(
+                        (item) => [
+                            item.child_id,
+                            item.name
+                        ]
+                    )
                 );
+
                 renderStudents();
                 renderRanking();
-                renderWarnings(stats.warnings || []);
-            }),
-            apiRequest('/api/device_status').then((deviceStatuses) => {
-                state.deviceStatuses = Object.fromEntries(
-                    (deviceStatuses.devices || []).map((item) => [item.child_id, item])
+                renderWarnings(
+                    stats.warnings || []
                 );
-                renderStudents();
             }),
-            loadMlResults().then(() => {
+
+            apiRequest('/api/device_status').then((deviceStatuses) => {
+                state.deviceStatuses =
+                    Object.fromEntries(
+                        (
+                            deviceStatuses.devices
+                            || []
+                        ).map(
+                            (item) => [
+                                item.child_id,
+                                item
+                            ]
+                        )
+                    );
+
                 renderStudents();
-                if (!document.getElementById('relationModal').classList.contains('is-hidden')) {
-                    renderRelationSummary();
+                renderModelAnomalyWarnings();
+            }),
+
+            (async () => {
+                try {
+                    await loadMlResults();
+
+                    const freshness = await apiRequest('/api/data_freshness');
+                    
+                    // サーバ側で推論完了するとProgressが0付近に戻るので、その直前のUI表示値を保存
+                    const previousMlProgress = {...(state.dataFreshness.mlProgress || {})};
+
+                    state.dataFreshness = {
+                        serverStartedAt: freshness.server_started_at,
+                        childData: freshness.child_data || {},
+                        childDistance: freshness.child_distance || {},
+                        mlProgress: freshness.ml_progress || {},
+                        mlCompleted: freshness.ml_completed || {}
+                    };
+
+                    // 今回の更新で新しいML推論完了を検出したか
+                    const completedChildIds = [];
+
+                    for (const child of state.children) {
+                        const childId = Number(child.child_id);
+                        const completion = state.dataFreshness.mlCompleted?.[childId];
+
+                        if (!completion) {
+                            continue;
+                        }
+
+                        const completionKey = `${completion.processed_through}|${completion.evaluated_at}`;
+                        const previousCompletionKey = state.mlCompletionSeen[childId];
+
+                        if (previousCompletionKey === undefined) {
+                            state.mlCompletionSeen[childId] = completionKey;
+                            continue;
+                        }
+
+                        if (previousCompletionKey !== completionKey) {
+                            completedChildIds.push(childId);
+
+                            state.mlCompletionSeen[childId] = completionKey;
+                        }
+                    }
+
+                    const completedBehaviors = [];
+
+                    for (const child of state.children) {
+                        const childId = Number(child.child_id);
+
+                        const progress = state.dataFreshness.mlProgress?.[childId];
+
+                        if (!progress) {
+                            continue;
+                        }
+
+                        const newProcessedThrough = progress.processed_through || null;
+                        const previousProcessedThrough = state.mlProcessedThrough[childId];
+
+                        // 初回時に既にDBにある結果を「今完了した推論」と誤認しない。
+                        if (previousProcessedThrough === undefined) {
+                            state.mlProcessedThrough[childId] = newProcessedThrough;
+
+                            continue;
+                        }
+
+                        if (
+                            newProcessedThrough !== null
+                            && newProcessedThrough !== previousProcessedThrough
+                        ) {
+                            const previousProgress = previousMlProgress?.[childId];
+
+                            // 推論結果がUIに反映されるまで100%表示を保持
+                            if (previousProgress) {
+                                state.mlProgressHold[childId] = {
+                                    processedThrough: newProcessedThrough,
+                                    progress: {
+                                        ...previousProgress,
+                                        received_rows: previousProgress.required_rows || 6000,
+                                        received_seconds: previousProgress.required_seconds || 600,
+                                        ready_for_inference: true
+                                    },
+                                };
+                            }
+                        }
+
+                        state.mlProcessedThrough[childId] = newProcessedThrough;
+                    }
+
+                    // サーバからProgress=0が返ってきても、新しい推論結果がUIに反映されるまでは100%表示を維持
+                    for (const [childId, hold] of Object.entries(state.mlProgressHold)) {
+                        if (!hold?.progress) {
+                            continue;
+                        }
+
+                        state.dataFreshness.mlProgress[childId] = {
+                            ...hold.progress,
+                        };
+                    }
+
+                    const pendingBehaviorRefreshes = Object.entries(state.mlProgressHold);
+
+                    if (pendingBehaviorRefreshes.length > 0) {
+                        // まず100%（処理中）を画面に出す。
+                        renderStudents();
+
+                        await Promise.all(
+                            pendingBehaviorRefreshes.map(
+                                async ([childIdText, hold]) => {
+                                    const childId = Number(childIdText);
+
+                                    const refreshed =
+                                        await refreshCompletedBehavior(
+                                            childId,
+                                            hold.processedThrough
+                                        );
+
+                                    if (!refreshed) {
+                                        return;
+                                    }
+
+                                    delete state.mlProgressHold[childId];
+
+                                    const latestFreshness = await apiRequest('/api/data_freshness');
+
+                                    const serverProgress = latestFreshness.ml_progress?.[childId];
+
+                                    if (serverProgress) {
+                                        state.dataFreshness.mlProgress[childId] = {
+                                            ...serverProgress,
+                                            ready_for_inference: false,
+                                        };
+                                    }
+                                }
+                            )
+                        );
+                    }
+
+                    renderStudents();
+
+                    if (
+                        !document
+                            .getElementById('relationModal')
+                            .classList
+                            .contains('is-hidden')
+                    ) {
+                        renderRelationSummary();
+                    }
+                } catch (error) {
+                    console.warn(
+                        '[ui] ML/progress refresh failed',
+                        error
+                    );
+                    throw error;
                 }
-            }).catch((error) => {
-                // 歩数ダッシュボード全体はML API障害の影響で止めない。
-                console.warn('[ui] ML refresh failed', error);
-            })
+            })(),
         ]);
+
         const failedRefresh = refreshResults.find((result) => result.status === 'rejected');
         if (failedRefresh) throw failedRefresh.reason;
         setMessage('refreshMessage', `最終更新 ${new Date().toLocaleTimeString()}`);
@@ -436,13 +788,55 @@ function getWifiSignalLevel(wifiRssi) {
 function renderStudents() {
     const grid = document.getElementById('studentGrid');
     const isSelectedToday = isToday(state.selectedDate);
+
+    const staleChildIds = new Set(
+        state.children
+            .filter((child) =>
+                isFreshnessStale(
+                    state.dataFreshness.childData[child.child_id],
+                    SENSOR_DATA_STALE_MS
+                )
+            )
+            .map((child) => child.child_id)
+    );
+
+    let staleDetails = document.getElementById('staleStudentDetails');
+
+    if (!staleDetails) {
+        staleDetails = document.createElement('details');
+        staleDetails.id = 'staleStudentDetails';
+        staleDetails.className = 'stale-student-details';
+
+        staleDetails.innerHTML = `
+            <summary></summary>
+            <div
+                id="staleStudentGrid"
+                class="student-grid"
+            ></div>
+        `;
+
+        grid.insertAdjacentElement(
+            'afterend',
+            staleDetails
+        );
+    }
+
+    const staleGrid = document.getElementById('staleStudentGrid');
+
+    staleDetails.querySelector('summary').textContent = `1分以上データの更新が無い子ども（${staleChildIds.size}人）`;
+
+    staleDetails.hidden = staleChildIds.size === 0;
+
     if (!state.children.length) {
         grid.innerHTML = '<div class="loading">このクラスに子どものデータがありません</div>';
         ensureSignageAutoScroll();
         return;
     }
+
     grid.querySelector('.loading')?.remove();
+
     const previousPositions = new Map();
+
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         card.getAnimations()
             .filter((animation) => animation.id === 'student-reorder')
@@ -450,11 +844,44 @@ function renderStudents() {
         const rect = card.getBoundingClientRect();
         previousPositions.set(Number(card.dataset.studentCard), { left: rect.left, top: rect.top });
     });
-    const sorted = [...state.children].sort((a, b) => (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0));
-    const visibleIds = new Set(sorted.map((child) => child.child_id));
-    grid.querySelectorAll('[data-student-card]').forEach((card) => {
-        if (!visibleIds.has(Number(card.dataset.studentCard))) card.remove();
+
+    // staleで歩数が薄色になっている児童は歩数値を順位計算に使わない。
+    const sorted = [...state.children].sort((a, b) => {
+        const aIsStale = isFreshnessStale(
+            state.dataFreshness.childData[a.child_id],
+            SENSOR_DATA_STALE_MS
+        );
+        const bIsStale = isFreshnessStale(
+            state.dataFreshness.childData[b.child_id],
+            SENSOR_DATA_STALE_MS
+        );
+
+        // freshな歩数だけを累計歩数順の並び替えに使う。
+        // staleな児童は歩数値を順位計算に使わず、freshな児童の後ろへ回す。
+        if (aIsStale !== bIsStale) {
+            return aIsStale ? 1 : -1;
+        }
+
+        if (aIsStale && bIsStale) {
+            return 0;
+        }
+
+        return (state.steps[b.child_id] || 0) - (state.steps[a.child_id] || 0);
     });
+
+    const visibleIds = new Set(sorted.map((child) => child.child_id));
+
+    [
+        ...grid.querySelectorAll('[data-student-card]'),
+        ...staleGrid.querySelectorAll('[data-student-card]')
+    ].forEach((card) => {
+        if (
+            !visibleIds.has(Number(card.dataset.studentCard))
+        ) {
+            card.remove();
+        }
+    });
+    
     sorted.forEach((child, index) => {
         const deviceStatus = state.deviceStatuses[child.child_id];
         const statusAge = deviceStatus ? Date.now() - Date.parse(deviceStatus.updated_at) : Infinity;
@@ -462,21 +889,39 @@ function renderStudents() {
         const currentDeviceStatus = isSelectedToday && isDeviceStatusFresh ? deviceStatus : null;
         const wifiSignalLevel = currentDeviceStatus ? getWifiSignalLevel(currentDeviceStatus.wifi_rssi) : 0;
         const wifiRssiLabel = currentDeviceStatus ? `${currentDeviceStatus.wifi_rssi} dBm` : ' : 接続なし';
+
         const wifiDescription = currentDeviceStatus
             ? `Wi-Fi電波強度 ${wifiSignalLevel}/4、${wifiRssiLabel}`
             : 'Wi-Fi電波強度 接続なし';
+
         const wifiBars = [1, 2, 3, 4].map((barNumber) =>
             `<span class="wifi-signal-bar${barNumber <= wifiSignalLevel ? ' is-active' : ''}"></span>`
         ).join('');
 
         const steps = state.steps[child.child_id] || 0;
+
+        const latestChildDataAt = state.dataFreshness.childData[child.child_id];
+
+        const stepsAreStale = isFreshnessStale(
+                latestChildDataAt,
+                SENSOR_DATA_STALE_MS
+        );
+
         const isTeacher = isTeacherFlag(child.child_id);
-        const nameHtml = `${escapeHtml(child.name || `子ども${child.child_id}`)}
+
+        const displayName = wanakana.toHiragana(child.name || `子ども${child.child_id}`);
+
+        const nameHtml = `${escapeHtml(displayName)}
                             ${isTeacher ? 
                                 '<span class="teacher-badge" title="先生の端末">🧑\u200d🏫 先生</span>' : ''
                             }`;
         
-        let card = grid.querySelector(`[data-student-card="${child.child_id}"]`);
+        let card = grid.querySelector(
+                `[data-student-card="${child.child_id}"]`
+            )
+            || staleGrid.querySelector(`[data-student-card="${child.child_id}"]`
+        );
+
         if (!card) {
             card = document.createElement('article');
             card.className = 'student-card';
@@ -489,22 +934,52 @@ function renderStudents() {
                 <div class="student-status"></div>
                 <section class="ml-summary" aria-label="推論結果"></section>`;
         }
-            card.dataset.palette = String((child.child_id - 1) % 8);
+
+        card.dataset.palette = String((child.child_id - 1) % 8);
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
         card.classList.toggle('has-model-warning', state.mlAnomalies[child.child_id]?.warning === true);
         card.querySelector('.student-name').innerHTML = nameHtml;
-        const nearestName = state.nearestNames[child.child_id];
+
+        const childIsStale = staleChildIds.has(child.child_id);
+
+        const targetGrid = childIsStale ? staleGrid : grid;
+
+        const latestDistanceDataAt = state.dataFreshness.childDistance[child.child_id];
+        const nearestIsStale = isFreshnessStale(latestDistanceDataAt, SENSOR_DATA_STALE_MS);
+        const nearestName = wanakana.toHiragana(state.nearestNames[child.child_id]);
+
         let nearestPerson = card.querySelector('.nearest-person');
-        if (nearestName) {
-            if (!nearestPerson) {
-                nearestPerson = document.createElement('div');
-                nearestPerson.className = 'nearest-person';
-                card.querySelector('.student-steps').insertAdjacentElement('afterend', nearestPerson);
-            }
-            nearestPerson.textContent = `最も近くにいる人：${nearestName}`;
-        } else {
-            nearestPerson?.remove();
+
+        const studentStepsElement = card.querySelector('.student-steps');
+        studentStepsElement.classList.toggle('is-stale-value', stepsAreStale);
+        studentStepsElement.title = stepsAreStale ? '歩数データが1分以上更新されていません' : '';
+
+        if (!nearestPerson) {
+            nearestPerson = document.createElement('div');
+            nearestPerson.className = 'nearest-person';
+
+            card.querySelector('.student-steps')
+                .insertAdjacentElement(
+                    'afterend',
+                    nearestPerson
+                );
         }
+
+        nearestPerson.textContent =
+            `最も近くにいる人：${
+                nearestName || 'データなし'
+            }`;
+
+        nearestPerson.classList.toggle(
+            'is-stale-value',
+            nearestIsStale
+        );
+
+        nearestPerson.title =
+            nearestIsStale
+                ? '距離データが1分以上更新されていません'
+                : '';
+
         const deviceStatusElement = card.querySelector('.device-status');
         deviceStatusElement.hidden = !isSelectedToday;
         deviceStatusElement.innerHTML = isSelectedToday ? `
@@ -517,6 +992,50 @@ function renderStudents() {
         card.querySelector('.student-status').innerHTML = '';
 
         const behavior = state.mlBehavior[child.child_id];
+
+        const completion = state.dataFreshness.mlCompleted?.[child.child_id];
+
+        const confirmedFreshness = state.mlBehaviorFreshness[child.child_id];
+
+        const behaviorTime = behavior
+            ? parseTimestamp(behavior.date)
+            : null;
+
+        const completionTime = completion
+            ? parseTimestamp(completion.processed_through)
+            : null;
+
+        const confirmedBehaviorTime = confirmedFreshness
+            ? parseTimestamp(confirmedFreshness.date)
+            : null;
+
+        let behaviorFreshnessTimestamp = behavior?.evaluated_at;
+
+        if (
+            behavior
+            && completion
+            && behaviorTime !== null
+            && completionTime !== null
+            && behaviorTime === completionTime
+        ) {
+            behaviorFreshnessTimestamp = completion.evaluated_at;
+        }
+
+        else if (
+            behavior
+            && confirmedFreshness
+            && behaviorTime !== null
+            && confirmedBehaviorTime !== null
+            && behaviorTime === confirmedBehaviorTime
+        ) {
+            behaviorFreshnessTimestamp = confirmedFreshness.evaluatedAt;
+        }
+
+
+        const behaviorIsStale = behavior
+            ? isMlResultStale(behaviorFreshnessTimestamp)
+            : false;
+                
         const anomaly = state.mlAnomalies[child.child_id];
 
         const currentBaselineDetails = card.querySelector('.baseline-details');
@@ -545,13 +1064,16 @@ function renderStudents() {
             .filter((other) => other.child_id !== child.child_id)
             .map((other) => {
                 const relation = state.mlRelations[relationKey(child.child_id, other.child_id)];
+                const relationIsStale = relation ? isMlResultStale(relation.evaluated_at) : false;
+
                 return `
-                    <div class="relation-score-row">
-                        <strong>${escapeHtml(other.name || `子ども${other.child_id}`)}</strong>
+                    <div class="relation-score-row${staleClass(relationIsStale)}">
+                        <strong>${escapeHtml(wanakana.toHiragana(other.name || `子ども${other.child_id}`))}</strong>
                         <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                         <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                         <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
-                    </div>`;
+                    </div>
+                `;
             }).join('');
 
         card.querySelector('.ml-summary').innerHTML = `
@@ -559,7 +1081,7 @@ function renderStudents() {
                 <article class="warning-item" role="alert">
                     <strong>⚠ 普段と異なる状態を検出しました</strong>
                     <span>
-                        直近の10分間でのデータがベースラインから
+                        直近の10分間でのデータが普段の値から
                         ${formatMlNumber(anomaly.threshold_percent, 1)}%以上外れています。    
                     </span>
                     <small>${anomalyWarnings.map(([feature, comparison]) =>
@@ -570,7 +1092,7 @@ function renderStudents() {
             <div class="ml-section">
                 <h3>最新のステータス</h3>
                 ${behavior ? `
-                    <div class="ml-result-grid">
+                    <div class="ml-result-grid${staleClass(behaviorIsStale)}" ${behaviorIsStale ? 'title="推論結果が15分以上更新されていません"' : ''}>
                         <span>姿勢状態</span><strong>${escapeHtml(behavior.behavior_acce)}</strong><small>${formatConfidence(behavior.behavior_acce_confidence)}での推論</small>
                         <span>走行状態</span><strong>${escapeHtml(behavior.behavior_pedo)}</strong><small>${formatConfidence(behavior.behavior_pedo_confidence)}での推論</small>
                         <span>活動量</span><strong>${escapeHtml(behavior.activity_level)} / 5</strong><small>${formatConfidence(behavior.activity_confidence)}での推論</small>
@@ -585,7 +1107,7 @@ function renderStudents() {
             <details class="baseline-details" ${state.mlDetailOpenStates[child.child_id]?.baseline ? 'open' : ''}>
                 <summary>この子の普段のステータス（基準値）</summary>
                 ${behavior ? `
-                    <div class="baseline-grid">
+                    <div class="baseline-grid ${staleClass(behaviorIsStale)}">
                         <span>歩数/10分</span><span>中央値 ${formatMlNumber(behavior.baseline_steps_10min_median)} / ばらつき ${formatMlNumber(behavior.baseline_steps_10min_mad_scale)}</span>
                         <span>活動量</span><span>中央値 ${formatMlNumber(behavior.baseline_activity_mean_proxy_median)} / ばらつき ${formatMlNumber(behavior.baseline_activity_mean_proxy_mad_scale)}</span>
                         <span>加速度</span><span>中央値 ${formatMlNumber(behavior.baseline_acc_std_median)} / ばらつき ${formatMlNumber(behavior.baseline_acc_std_mad_scale)}</span>
@@ -617,10 +1139,11 @@ function renderStudents() {
             state.mlDetailOpenStates[child.child_id].relation = relationDetails.open;
         });
 
-        const referenceNode = grid.children[index];
-        if (referenceNode !== card) grid.insertBefore(card, referenceNode || null);
+        targetGrid.appendChild(card);
+        
         animateStepValue(card.querySelector('.step-number'), child.child_id, steps);
     });
+
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         const previous = previousPositions.get(Number(card.dataset.studentCard));
         if (!previous) return;
@@ -637,7 +1160,9 @@ function renderStudents() {
         });
         animation.id = 'student-reorder';
     });
+
     ensureSignageAutoScroll();
+    renderOpenStudentDetailModal();
 }
 
 function stopSignageAutoScroll() {
@@ -652,8 +1177,10 @@ function scrollSignagePage() {
         stopSignageAutoScroll();
         return;
     }
+
     const grid = document.getElementById('studentGrid');
     const maxScroll = grid.scrollHeight - grid.clientHeight;
+
     if (maxScroll <= 1) {
         stopSignageAutoScroll();
         signageScrollRetryTimer = setTimeout(() => {
@@ -721,35 +1248,132 @@ function setSignageMode(enabled, syncFullscreen = true) {
     }
 }
 
-function openStudentDetailModal(childId) {
+function renderStudentMlProgress(childId) {
+    const progress = state.dataFreshness.mlProgress?.[childId];
+    if (!progress) return '';
+
+    const receivedRows = Math.max(0, Number(progress.received_rows) || 0);
+    const requiredRows = Math.max(1, Number(progress.required_rows) || 6000);
+    const percentage = Math.min(100, receivedRows / requiredRows * 100);
+    const remainingRows = Math.max(0, requiredRows - receivedRows);
+    const isWaitingForInference = percentage >= 100 && Boolean(progress.ready_for_inference);
+    const remainingMinutes = remainingRows / 600  + 0.5; // データの受信には30秒の遅延を考慮
+
+    return `
+        <div class="student-ml-progress">
+            <div class="student-ml-progress-heading">
+                <span>次のステータスの更新までのデータ蓄積量</span>
+                <strong>${
+                    isWaitingForInference
+                        ? '100.0%（処理中）'
+                        : `${percentage.toFixed(1)}%（残り約${remainingMinutes.toFixed(1)}分）`
+                }</strong>
+        </div>
+        <div class="student-ml-progress-track" role="progressbar" aria-label="次のステータスの更新まで" aria-valuemin="0" aria-valuemax="${requiredRows}" aria-valuenow="${Math.min(receivedRows, requiredRows)}">
+                <div class="student-ml-progress-bar" style="width: ${percentage}%"></div>
+        </div>`;
+}
+
+function renderOpenStudentDetailModal() {
+    const childId = openStudentDetailChildId;
+    if (childId === null) return;
+
+    const modal = document.getElementById('studentDetailModal');
+    if (!modal || modal.classList.contains('is-hidden')) return;
+
     const child = state.children.find((item) => item.child_id === childId);
     const card = document.querySelector(`[data-student-card="${childId}"]`);
     if (!child || !card) return;
 
-    document.getElementById('studentDetailTitle').textContent =
-        `${child.name || `子ども${childId}`}の詳細`;
-    document.getElementById('studentDetailContent').innerHTML = `
+    const content = document.getElementById('studentDetailContent');
+
+    const currentBaselineDetails = content.querySelector('.baseline-details');
+
+    const currentRelationDetails = content.querySelector('.relation-details');
+
+    if (!state.mlDetailOpenStates[childId]) {
+        state.mlDetailOpenStates[childId] = {
+            baseline: false,
+            relation: false
+        };
+    }
+
+    if (currentBaselineDetails) {
+        state.mlDetailOpenStates[childId].baseline = currentBaselineDetails.open;
+    }
+
+    if (currentRelationDetails) {
+        state.mlDetailOpenStates[childId].relation = currentRelationDetails.open;
+    }
+
+    document.getElementById('studentDetailTitle').textContent = `${wanakana.toHiragana(child.name || `子ども${childId}`)}の詳細`;
+
+    content.innerHTML = `
         <div class="student-detail-summary">
-            <strong>${escapeHtml(child.name || `子ども${childId}`)}</strong>
-            <span>${escapeHtml(state.nearestNames[childId] ? `最も近くにいる人：${state.nearestNames[childId]}` : '近くにいる人：データなし')}</span>
+            <strong>${escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`))}</strong>
+            <span>${escapeHtml(
+                state.nearestNames[childId]
+                    ? `最も近くにいる人：${wanakana.toHiragana(state.nearestNames[childId])}`
+                    : '近くにいる人：データなし'
+            )}</span>
             <span>歩数：${(state.steps[childId] || 0).toLocaleString()}</span>
         </div>
+
         ${card.querySelector('.device-status')?.outerHTML || ''}
         ${card.querySelector('.student-status')?.outerHTML || ''}
-        ${card.querySelector('.ml-summary')?.outerHTML || ''}`;
+        ${renderStudentMlProgress(childId)}
+        ${card.querySelector('.ml-summary')?.outerHTML || ''}
+    `;
+
+    const baselineDetails = content.querySelector('.baseline-details');
+
+    const relationDetails = content.querySelector('.relation-details');
+
+    if (baselineDetails) {
+        baselineDetails.open = state.mlDetailOpenStates[childId].baseline;
+        baselineDetails.addEventListener('toggle', () => {
+            state.mlDetailOpenStates[childId].baseline = baselineDetails.open;
+        });
+    }
+
+    if (relationDetails) {
+        relationDetails.open = state.mlDetailOpenStates[childId].relation;
+        relationDetails.addEventListener('toggle', () => {
+            state.mlDetailOpenStates[childId].relation = relationDetails.open;
+        });
+    }
+}
+
+function openStudentDetailModal(childId) {
+    openStudentDetailChildId = childId;
     openModal('studentDetailModal');
+    renderOpenStudentDetailModal();
 }
 
 // 現在表示中の児童から直近1分の歩数増加上位5名を描画する。
 function renderRanking() {
-    const visibleChildIds = new Set(state.children.map((child) => child.child_id));
+    const freshVisibleChildIds = new Set(
+        state.children
+            .filter((child) =>
+                !isFreshnessStale(
+                    state.dataFreshness.childData[child.child_id],
+                    SENSOR_DATA_STALE_MS
+                )
+            )
+            .map((child) => child.child_id)
+    );
+
     const ranking = state.stepIncreaseRanking
-        .filter((item) => visibleChildIds.has(item.child_id))
+        .filter((item) => freshVisibleChildIds.has(item.child_id))
         .slice(0, 5);
+
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
         const entry = ranking[index];
+
         item.innerHTML = entry
-            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `子ども${entry.child_id}`)}</strong>`
+            ? `<span>${index + 1}.</span><strong>${escapeHtml(
+                wanakana.toHiragana(entry.name || `子ども${entry.child_id}`)
+            )}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
 }
@@ -757,28 +1381,82 @@ function renderRanking() {
 function renderModelAnomalyWarnings() {
     const panel = document.getElementById('modelAnomalyPanel');
     const list = document.getElementById('modelAnomalyList');
-    const items = state.children.flatMap((child) => {
-        const anomaly = state.mlAnomalies[child.child_id];
-        if (anomaly?.warning !== true) return [];
-        const reasons = Object.entries(anomaly.comparisons || {})
-            .filter(([, comparison]) => comparison.warning === true)
-            .map(([feature, comparison]) =>
-                `<li>${escapeHtml(formatAnomalyChange(feature, comparison))}</li>`
-            );
-        if (!reasons.length) return [];
-        return [`<li class="model-anomaly-item">
-            <button class="model-anomaly-child-link" type="button" data-anomaly-child="${child.child_id}">${escapeHtml(child.name || `子ども${child.child_id}`)}</button>
-            <ul>${reasons.join('')}</ul>
-        </li>`];
-    });
+    const items = [];
+
+    for (const child of state.children) {
+        const childId = Number(child.child_id);
+        const childName = escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`));
+        const anomaly = state.mlAnomalies[childId];
+
+        if (anomaly?.warning === true) {
+            items.push(`
+                <li class="model-anomaly-item">
+                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
+                        ${childName}
+                    </button>
+                    <span>⚠ 行動状態</span>
+                </li>
+            `);
+        }
+
+        const deviceStatus = state.deviceStatuses[childId];
+
+        const battery = Number(deviceStatus?.battery);
+
+        // 20%以下のバッテリー残量で警告
+        if (
+            deviceStatus
+            && Number.isFinite(battery)
+            && battery <= 20
+        ) {
+            items.push(`
+                <li class="model-anomaly-item">
+                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
+                        ${childName}
+                    </button>
+                    <span>⚠ バッテリー</span>
+                </li>
+            `);
+        }
+
+        const wifiRssi = Number(deviceStatus?.wifi_rssi);
+
+        // 棒が1本以下の電波強度で警告
+        if (
+            deviceStatus
+            && Number.isFinite(wifiRssi)
+            && getWifiSignalLevel(wifiRssi) <= 1
+        ) {
+            items.push(`
+                <li class="model-anomaly-item">
+                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
+                        ${childName}
+                    </button>
+                    <span>⚠ 電波強度</span>
+                </li>
+            `);
+        }
+    }
+
     list.innerHTML = items.length
         ? items.join('')
-        : '<li class="model-anomaly-clear">現在、警告はありません。</li>';
-    document.getElementById('modelAnomalyCount').textContent = items.length
-        ? `${items.length}人に異常を検知`
-        : '警告なし';
+        : `
+            <li class="model-anomaly-clear">
+                現在、警告はありません。
+            </li>
+        `;
+
+    document.getElementById('modelAnomalyCount').textContent =
+        items.length
+            ? `${items.length}件`
+            : '警告なし';
+
     panel.hidden = false;
-    panel.classList.toggle('is-clear', items.length === 0);
+
+    panel.classList.toggle(
+        'is-clear',
+        items.length === 0
+    );
 }
 
 // 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。
@@ -801,7 +1479,7 @@ function renderWarnings(warnings) {
     }
     warningList.innerHTML = visibleWarnings.map((warning) => `
         <article class="warning-item">
-            <strong>${escapeHtml(warning.name)}</strong>
+            <strong>${escapeHtml(wanakana.toHiragana(warning.name))}</strong>
             <span>歩数 ${warning.current_steps.toLocaleString()}歩</span>
             <small>普段の${warning.percent}%（平均 ${warning.average_steps.toLocaleString()}歩）</small>
         </article>`).join('');
@@ -837,10 +1515,13 @@ function renderRelationSummary() {
         for (let j = i + 1; j < state.children.length; j += 1) {
             const child1 = state.children[i];
             const child2 = state.children[j];
+
             const relation = state.mlRelations[relationKey(child1.child_id, child2.child_id)];
+            const relationIsStale = relation ? isMlResultStale(relation.evaluated_at) : false;
+
             rows.push(`
-                <div class="relation-pair">
-                    <strong>${escapeHtml(child1.name)} ↔ ${escapeHtml(child2.name)}</strong>
+                <div class="relation-pair${staleClass(relationIsStale)}">
+                    <strong>${escapeHtml(wanakana.toHiragana(child1.name))} ↔ ${escapeHtml(wanakana.toHiragana(child2.name))}</strong>
                     <span>距離状態: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                     <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                     <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
@@ -892,10 +1573,6 @@ function renderRelatedNetwork() {
 
     const radiusX = width * 0.43;
     const radiusY = height * 0.39;
-
-    let nodeRadius = 34;
-    let nodeFontSize = 14;
-    let maxNameLength = 7;
 
     if (children.length > 16) {
         nodeRadius = 23;
@@ -1021,7 +1698,7 @@ function renderRelatedNetwork() {
                 y="${node.y}"
                 text-anchor="middle"
                 dominant-baseline="middle">
-                ${escapeHtml(node.name)}
+                ${escapeHtml(wanakana.toHiragana(node.name))}
             </text>
         </g>
     `).join('');
@@ -1058,11 +1735,7 @@ function renderRelatedNetwork() {
 
                 edge.classList.add('is-selected');
 
-                const score =
-                    Number(edge.dataset.score);
-
-                const confidence =
-                    Number(edge.dataset.confidence);
+                const score = Number(edge.dataset.score);
 
                 detail.innerHTML = `
                     <strong>
@@ -1087,11 +1760,64 @@ async function openRelatedNetworkModal() {
     openModal('relatedNetworkModal');
 
     const graph = document.getElementById('relatedNetworkGraph');
-    graph.innerHTML = '<p>データを読み込み中...</p>';
+
+    graph.innerHTML = `
+        <div class="network-loading">
+            <strong>
+                関係データを読み込み中...
+            </strong>
+
+            <div>
+                <progress
+                    id="relatedNetworkProgress"
+                    value="0"
+                    max="100"
+                ></progress>
+            </div>
+
+            <span
+                id="relatedNetworkProgressText"
+            >
+                0%
+            </span>
+        </div>
+    `;
 
     try {
-        await loadMlResults(true);
+        await loadMlResults(
+            true,
+
+            (completed, total) => {
+                const progress =
+                    document.getElementById(
+                        'relatedNetworkProgress'
+                    );
+
+                const text =
+                    document.getElementById(
+                        'relatedNetworkProgressText'
+                    );
+
+                if (!progress || !text) {
+                    return;
+                }
+
+                const percentage =
+                    total > 0
+                        ? completed / total * 100
+                        : 100;
+
+                progress.value = percentage;
+
+                text.textContent =
+                    total > 0
+                        ? `${percentage.toFixed(1)}%（${completed} / ${total}）`
+                        : '100%';
+            }
+        );
+
         renderRelatedNetwork();
+
     } catch (error) {
         console.error(
             '[ui] related network failed',
@@ -1138,8 +1864,8 @@ async function refreshStudentManageList() {
         const isTeacher = isTeacherFlag(child.child_id);
         return `<tr class="student-manage-row ${isTeacher ? 'is-teacher' : ''}" data-manage-row="${child.child_id}">
             <td>${child.child_id}</td>
-            <td class="student-manage-name">${escapeHtml(child.name)}</td>
-            <td><select data-manage-class="${child.child_id}" aria-label="${escapeHtml(child.name)}の所属クラス">
+            <td class="student-manage-name">${escapeHtml(wanakana.toHiragana(child.name))}</td>
+            <td><select data-manage-class="${child.child_id}" aria-label="${escapeHtml(wanakana.toHiragana(child.name))}の所属クラス">
                 <option value="">未所属</option>
                 ${classes.map((item) => `<option value="${item.class_id}" ${item.class_id === child.class_id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
             </select></td>
@@ -1151,9 +1877,9 @@ async function refreshStudentManageList() {
     }).join('') : '<tr><td colspan="4">登録されている子どもはいません</td></tr>';
     document.getElementById('studentDeleteList').innerHTML = children.length ? children.map((child) => `
         <tr>
-            <td><input type="checkbox" data-delete-child="${child.child_id}" aria-label="${escapeHtml(child.name)}を削除対象にする"></td>
+            <td><input type="checkbox" data-delete-child="${child.child_id}" aria-label="${escapeHtml(wanakana.toHiragana(child.name))}を削除対象にする"></td>
             <td>${child.child_id}</td>
-            <td>${escapeHtml(child.name)}</td>
+            <td>${escapeHtml(wanakana.toHiragana(child.name))}</td>
             <td>${escapeHtml(classNames.get(child.class_id) || '未所属')}</td>
         </tr>`).join('') : '<tr><td colspan="4">削除できる子どもはいません</td></tr>';
     document.getElementById('selectAllStudentDelete').checked = false;
@@ -1210,6 +1936,7 @@ function openModal(id) {
 // 開いているモーダルを閉じる。
 function closeModal() {
     document.getElementById('modalLayer').classList.add('is-hidden');
+    openStudentDetailChildId = null;
 }
 
 // 現在ログイン中のユーザー名を初期値にして削除画面を開く。
@@ -1239,6 +1966,22 @@ function formatDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+// ===== 初期表示 =====
+
+const modelAnomalyPanel = document.getElementById('modelAnomalyPanel');
+const modelAnomalyList = document.getElementById('modelAnomalyList');
+const modelAnomalyCount = document.getElementById('modelAnomalyCount');
+
+if (modelAnomalyPanel && modelAnomalyList && modelAnomalyCount) {
+    modelAnomalyPanel.hidden = false;
+    modelAnomalyPanel.classList.add('is-clear');
+
+    modelAnomalyList.innerHTML =
+        '<li class="model-anomaly-clear">現在、警告はありません。</li>';
+
+    modelAnomalyCount.textContent = '警告なし';
+}
+
 // ===== 画面フォームとメニューのイベント処理 =====
 
 async function submitLogin(event) {
@@ -1247,8 +1990,19 @@ async function submitLogin(event) {
     if (button.disabled) return;
     button.disabled = true;
     setMessage('loginMessage', '');
+
     try {
-        await login(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
+        await login(
+            document.getElementById('loginUsername').value, 
+            document.getElementById('loginPassword').value
+        );
+
+        // 通知登録に失敗しただけで「ログイン失敗」となるのを防ぐ
+        try {
+            await subscribeNotify();
+        } catch (error) {
+            console.warn('[ui] notification subscription failed', error);
+        }
     } catch (error) {
         setMessage('loginMessage', error.message);
     } finally {
@@ -1571,27 +2325,30 @@ refreshTimer = setInterval(() => {
     }
 }, 5000);
 
-
 async function subscribe_notify() {
-
     document.getElementById('loginButton').addEventListener("click", async () => {
         if (await Notification.requestPermission() !== "granted") {
             console.error("not granted......")
             return;
         };
+
         await navigator.serviceWorker.register("service-worker.js");
+
         let ready = await navigator.serviceWorker.ready;
+
         if (!await ready.pushManager.getSubscription()) {
-            pubkey = await apiRequest("/api/notify/key", {method: "GET"});
-            sub = await ready.pushManager.subscribe({
+            const pubkey = await apiRequest("/api/notify/key", {method: "GET"});
+            const sub = await ready.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: Uint8Array.fromBase64(pubkey.key, {alphabet: "base64url"})
             });
+
             await apiRequest("/api/notify/subscribe", {
                 method: "POST",
                 body: JSON.stringify(sub.toJSON())
             });
-        };
-    })
+        }
+    });
 }
-subscribe_notify()
+
+subscribe_notify();
