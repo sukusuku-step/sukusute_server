@@ -1269,14 +1269,28 @@ function openStudentDetailModal(childId) {
 
 // 現在表示中の児童から直近1分の歩数増加上位5名を描画する。
 function renderRanking() {
-    const visibleChildIds = new Set(state.children.map((child) => child.child_id));
+    const freshVisibleChildIds = new Set(
+        state.children
+            .filter((child) =>
+                !isFreshnessStale(
+                    state.dataFreshness.childData[child.child_id],
+                    SENSOR_DATA_STALE_MS
+                )
+            )
+            .map((child) => child.child_id)
+    );
+
     const ranking = state.stepIncreaseRanking
-        .filter((item) => visibleChildIds.has(item.child_id))
+        .filter((item) => freshVisibleChildIds.has(item.child_id))
         .slice(0, 5);
+
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
         const entry = ranking[index];
+
         item.innerHTML = entry
-            ? `<span>${index + 1}.</span><strong>${escapeHtml(wanakana.toHiragana(entry.name || `子ども${entry.child_id}`))}</strong>`
+            ? `<span>${index + 1}.</span><strong>${escapeHtml(
+                wanakana.toHiragana(entry.name || `子ども${entry.child_id}`)
+            )}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
 }
