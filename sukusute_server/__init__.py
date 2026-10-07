@@ -48,7 +48,7 @@ async def notifier():
                         warned.add(warning.child_id)
                         await push_notify.send_notification(dbsession, f"歩数警告が発生しました: {warning.name}")
                         logger.info(f"Sent notification: child_id={warning.child_id}, name={warning.name}")
-                for hist in already_warned:
+                for hist in already_warned.copy():
                     if hist not in warned:
                         # staled record
                         already_warned.remove(hist)
