@@ -1,5 +1,3 @@
-import { toHiragana } from 'wanakana';
-
 const state = {
     token: localStorage.getItem('sukusuteToken'),
     teacher: null,
@@ -840,7 +838,7 @@ function renderStudents() {
 
         const isTeacher = isTeacherFlag(child.child_id);
 
-        const displayName = toHiragana(child.name || `子ども${child.child_id}`);
+        const displayName = wanakana.toHiragana(child.name || `子ども${child.child_id}`);
 
         const nameHtml = `${escapeHtml(displayName)}
                             ${isTeacher ? 
