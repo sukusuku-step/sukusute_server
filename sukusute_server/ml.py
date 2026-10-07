@@ -374,10 +374,6 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                 "evaluated_at": completed_at
             }
 
-        await evaluate_distance_data(dbsession, child_id, distance_child_ids)
-        await dbsession.commit()
-
-
 async def _latest_distance_processed_boundary(dbsession, pair: tuple[int, int]):
     latest_evaluation_date = await dbsession.scalar(
         select(func.max(
@@ -443,6 +439,7 @@ async def evaluate_distance_data(
                 distance_input = np.fromiter(
                     (record.distance for record in records), dtype=np.float32
                 )
+
                 distance_result = await run_ml_inference(
                     sukusute_machine_learning.inference.predict_distance.distance_infer,
                     distance_input
@@ -463,10 +460,15 @@ async def evaluate_distance_data(
                         .limit(RELATEDNESS_MAX_HISTORY)
                     )
                 ).scalars().all()
-                relatedness_result = await run_ml_inference(
-                    sukusute_machine_learning.utils.relatedness.calc_relatedness,
-                    history
-                )
+
+                if history:
+                    relatedness_result = await run_ml_inference(
+                        sukusute_machine_learning.utils.relatedness.calc_relatedness,
+                        history
+                    )
+                else:
+                    # 初回は過去履歴が存在しないので関連度は初期値を入れておく
+                    relatedness_result = 0.0
 
                 dbsession.add(
                     sukusute_server.database_models.ChildDistanceEvaluationHistory(

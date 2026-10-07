@@ -129,7 +129,7 @@ def create_devices(
         for slot, (name, child_id) in enumerate(enrolled, start=1)
     ]
     for device in devices:
-        device.peers = [other for other in devices if other.child_id > device.child_id]
+        device.peers = [other for other in devices if other.child_id != device.child_id]
     return devices
 
 
@@ -169,12 +169,7 @@ def make_csv_batch(
         my = 5.0 + device.rng.gauss(0, 1.5)
         mz = 40.0 + device.rng.gauss(0, 1.5)
 
-        distances = []
-        for peer in device.peers:
-            physical_distance = math.hypot(device.x - peer.x, device.y - peer.y)
-            noisy_distance = max(0.1, physical_distance + device.rng.gauss(0, 0.15))
-            rssi = distance_to_rssi(noisy_distance)
-            distances.append(f"{calculate_distance_from_rssi(rssi):.2f}")
+        distances = [str(device.rng.randint(0, 14)) for _ in device.peers]
 
         writer.writerow([
             f"{sample_index / 10.0:.1f}", device.steps,

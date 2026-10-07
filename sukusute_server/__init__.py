@@ -414,19 +414,60 @@ async def get_data_freshness(dbsession: database_models.SessionDep):
         "ml_completed": ml_completed 
     }
 
-async def _run_ml_evaluation_with_new_session(
+async def _run_behavior_evaluation_with_new_session(
+    db_bind,
+    child_id: int,
+) -> None:
+    """行動系MLを独立Sessionで実行する。"""
+
+    session_factory = async_sessionmaker(
+        bind=db_bind,
+        expire_on_commit=False
+    )
+
+    try:
+        async with session_factory() as ml_session:
+            await ml.evaluate_data(
+                ml_session,
+                child_id,
+                []
+            )
+
+    except Exception:
+        logger.exception(
+            "Behavior ML evaluation failed for child_id=%s",
+            child_id
+        )
+
+async def _run_distance_evaluation_with_new_session(
     db_bind,
     child_id: int,
     distance_child_ids: list[int],
 ) -> None:
-    """リクエスト用Sessionを持ち越さず、ML用の独立SessionでDBを参照する。"""
-    session_factory = async_sessionmaker(bind=db_bind, expire_on_commit=False)
+    """相対距離MLを行動推論とは独立して実行する。"""
+
+    if not distance_child_ids:
+        return
+
+    session_factory = async_sessionmaker(
+        bind=db_bind,
+        expire_on_commit=False
+    )
+
     try:
         async with session_factory() as ml_session:
-            await ml.evaluate_data(ml_session, child_id, distance_child_ids)
-    except Exception:
-        logger.exception("ML background evaluation failed for child_id=%s", child_id)
+            await ml.evaluate_distance_data(
+                ml_session,
+                child_id,
+                distance_child_ids
+            )
 
+    except Exception:
+        logger.exception(
+            "Distance ML evaluation failed for child_id=%s distance_child_ids=%s",
+            child_id,
+            distance_child_ids
+        )
 
 @app.post("/api/push_csv/{child_id}", tags=["API"])
 async def push_csv(
@@ -514,13 +555,21 @@ async def push_csv(
         for distance_child_id in distance_child_ids:
             distance_data_received_at[distance_child_id] = received_at
 
-    # リクエストのdbsessionはレスポンス後に破棄されるため、BackgroundTasksへ直接渡さない。
-    # 独立したAsyncSessionを作成して、DBだけを基準に推論状態を復元・更新する。
     background_tasks.add_task(
-        _run_ml_evaluation_with_new_session,
+        _run_behavior_evaluation_with_new_session,
+        dbsession.bind,
+        child_id
+    )
+
+    background_tasks.add_task(
+        _run_distance_evaluation_with_new_session,
         dbsession.bind,
         child_id,
-        parsed_distance_children,
+        [
+            other_child_id
+            for other_child_id in parsed_distance_children
+            if other_child_id in existing_distance_children
+        ]
     )
 
     return http_models.Result(status="ok")
@@ -1543,11 +1592,16 @@ async def get_ml_relation_result(
         child_id_1: int,
         child_id_2: int):
     """ 児童の関係に関する最新の推論結果を返却する。 """
+    pair = (
+        min(child_id_1, child_id_2),
+        max(child_id_1, child_id_2),
+    )
+
     record = (await dbsession.scalar(
         sqlalchemy.select(database_models.ChildDistanceEvaluationHistory)
         .where(and_(
-            database_models.ChildDistanceEvaluationHistory.child_id_1 == min(child_id_1, child_id_2),
-            database_models.ChildDistanceEvaluationHistory.child_id_2 == max(child_id_1, child_id_2)
+            database_models.ChildDistanceEvaluationHistory.child_id_1 == pair[0],
+            database_models.ChildDistanceEvaluationHistory.child_id_2 == pair[1]
         ))
         .order_by(sqlalchemy.desc(database_models.ChildDistanceEvaluationHistory.date))
         .limit(1)
@@ -1555,13 +1609,20 @@ async def get_ml_relation_result(
     if not record:
         raise fastapi.exceptions.HTTPException(404, "Record not found.")
 
-    return http_models.MLRelationResult(
-        status="ok",
-        date=record.date,
-        evaluated=record.evaluated,
-        confidence=record.confidence,
-        score=record.score
-    )
+    evaluated_at = ml.latest_distance_evaluated_at.get(pair)
+
+    return {
+        "status": "ok",
+        "date": record.date,
+        "evaluated_at": (
+            evaluated_at.isoformat()
+            if evaluated_at is not None
+            else None
+        ),
+        "evaluated": record.evaluated,
+        "confidence": record.confidence,
+        "score": record.score
+    }
 
 @app.post("/api/notify/subscribe", tags=["API"])
 async def notify_subscribe(dbsession: database_models.SessionDep, data: dict) -> http_models.Result:

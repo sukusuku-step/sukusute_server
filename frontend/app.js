@@ -30,6 +30,9 @@ const state = {
     mlCompletionSeen: {},
     mlProcessedThrough: {},
 
+    // 推論結果のUI反映が終わるまで100%表示を保持
+    mlProgressHold: {},
+
     mlDetailOpenStates: {},
 
     mlUpdatedAt: 0,
@@ -396,7 +399,6 @@ async function refreshCompletedBehavior(childId, expectedProcessedThrough) {
             };
 
             renderModelAnomalyWarnings();
-            renderStudents();
 
             return true;
         }
@@ -579,6 +581,9 @@ async function loadDashboard() {
                     await loadMlResults();
 
                     const freshness = await apiRequest('/api/data_freshness');
+                    
+                    // サーバ側で推論完了するとProgressが0付近に戻るので、その直前のUI表示値を保存
+                    const previousMlProgress = {...(state.dataFreshness.mlProgress || {})};
 
                     state.dataFreshness = {
                         serverStartedAt: freshness.server_started_at,
@@ -611,17 +616,6 @@ async function loadDashboard() {
                             completedChildIds.push(childId);
 
                             state.mlCompletionSeen[childId] = completionKey;
-
-                            const progress = state.dataFreshness.mlProgress?.[childId];
-
-                            if (progress) {
-                                state.dataFreshness.mlProgress[childId] = {
-                                    ...progress,
-                                    received_rows: 0,
-                                    received_seconds: 0,
-                                    ready_for_inference: false
-                                };
-                            }
                         }
                     }
 
@@ -637,38 +631,83 @@ async function loadDashboard() {
                         }
 
                         const newProcessedThrough = progress.processed_through || null;
-                        const previousProcessedThrough = state.mlProcessedThrough[childId] || null;
+                        const previousProcessedThrough = state.mlProcessedThrough[childId];
+
+                        // 初回時に既にDBにある結果を「今完了した推論」と誤認しない。
+                        if (previousProcessedThrough === undefined) {
+                            state.mlProcessedThrough[childId] = newProcessedThrough;
+
+                            continue;
+                        }
 
                         if (
-                            previousProcessedThrough !== null
-                            && newProcessedThrough !== null
+                            newProcessedThrough !== null
                             && newProcessedThrough !== previousProcessedThrough
                         ) {
-                            state.dataFreshness.mlProgress[childId] = {
-                                ...progress,
-                                received_rows: 0,
-                                received_seconds: 0,
-                                ready_for_inference: false,
-                            };
+                            const previousProgress = previousMlProgress?.[childId];
 
-                            completedBehaviors.push({
-                                childId,
-                                processedThrough:
-                                    newProcessedThrough,
-                            });
+                            // 推論結果がUIに反映されるまで100%表示を保持
+                            if (previousProgress) {
+                                state.mlProgressHold[childId] = {
+                                    processedThrough: newProcessedThrough,
+                                    progress: {
+                                        ...previousProgress,
+                                        received_rows: previousProgress.required_rows || 6000,
+                                        received_seconds: previousProgress.required_seconds || 600,
+                                        ready_for_inference: true
+                                    },
+                                };
+                            }
                         }
 
                         state.mlProcessedThrough[childId] = newProcessedThrough;
                     }
 
-                    if (completedBehaviors.length > 0) {
+                    // サーバからProgress=0が返ってきても、新しい推論結果がUIに反映されるまでは100%表示を維持
+                    for (const [childId, hold] of Object.entries(state.mlProgressHold)) {
+                        if (!hold?.progress) {
+                            continue;
+                        }
+
+                        state.dataFreshness.mlProgress[childId] = {
+                            ...hold.progress,
+                        };
+                    }
+
+                    const pendingBehaviorRefreshes = Object.entries(state.mlProgressHold);
+
+                    if (pendingBehaviorRefreshes.length > 0) {
+                        // まず100%（処理中）を画面に出す。
+                        renderStudents();
+
                         await Promise.all(
-                            completedBehaviors.map(
-                                ({ childId, processedThrough }) =>
-                                    refreshCompletedBehavior(
-                                        childId,
-                                        processedThrough
-                                    )
+                            pendingBehaviorRefreshes.map(
+                                async ([childIdText, hold]) => {
+                                    const childId = Number(childIdText);
+
+                                    const refreshed =
+                                        await refreshCompletedBehavior(
+                                            childId,
+                                            hold.processedThrough
+                                        );
+
+                                    if (!refreshed) {
+                                        return;
+                                    }
+
+                                    delete state.mlProgressHold[childId];
+
+                                    const latestFreshness = await apiRequest('/api/data_freshness');
+
+                                    const serverProgress = latestFreshness.ml_progress?.[childId];
+
+                                    if (serverProgress) {
+                                        state.dataFreshness.mlProgress[childId] = {
+                                            ...serverProgress,
+                                            ready_for_inference: false,
+                                        };
+                                    }
+                                }
                             )
                         );
                     }
@@ -1133,17 +1172,21 @@ function renderStudentMlProgress(childId) {
     const requiredRows = Math.max(1, Number(progress.required_rows) || 6000);
     const percentage = Math.min(100, receivedRows / requiredRows * 100);
     const remainingRows = Math.max(0, requiredRows - receivedRows);
+    const isWaitingForInference = percentage >= 100 && Boolean(progress.ready_for_inference);
     const remainingMinutes = remainingRows / 600  + 0.5; // データの受信には30秒の遅延を考慮
 
     return `
         <div class="student-ml-progress">
             <div class="student-ml-progress-heading">
                 <span>次のステータスの更新までのデータ蓄積量</span>
-                <strong>${percentage.toFixed(1)}%（残り約${remainingMinutes.toFixed(1)}分）</strong>
-            </div>
-            <div class="student-ml-progress-track" role="progressbar" aria-label="次のステータスの更新まで" aria-valuemin="0" aria-valuemax="${requiredRows}" aria-valuenow="${Math.min(receivedRows, requiredRows)}">
+                <strong>${
+                    isWaitingForInference
+                        ? '100.0%（処理中）'
+                        : `${percentage.toFixed(1)}%（残り約${remainingMinutes.toFixed(1)}分）`
+                }</strong>
+        </div>
+        <div class="student-ml-progress-track" role="progressbar" aria-label="次のステータスの更新まで" aria-valuemin="0" aria-valuemax="${requiredRows}" aria-valuenow="${Math.min(receivedRows, requiredRows)}">
                 <div class="student-ml-progress-bar" style="width: ${percentage}%"></div>
-            </div>
         </div>`;
 }
 
@@ -2183,7 +2226,7 @@ refreshTimer = setInterval(() => {
         console.info('[ui] automatic refresh triggered');
         loadDashboard();
     }
-}, 10000);
+}, 5000);
 
 async function subscribe_notify() {
     document.getElementById('loginButton').addEventListener("click", async () => {

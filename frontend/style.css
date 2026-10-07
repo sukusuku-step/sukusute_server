@@ -835,9 +835,13 @@ body.square-mode .nearest-person {
     color: #8d2525;
 }
 
-.warning-item small {
+.warning-item > small {
+    display: block;
+    width: 100%;
     color: #80664a;
     font-size: 10px;
+    text-align: left !important;
+    justify-self: stretch;
 }
 
 .loading {
