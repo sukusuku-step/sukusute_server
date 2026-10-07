@@ -858,14 +858,15 @@ function renderStudents() {
                 <div class="student-status"></div>
                 <section class="ml-summary" aria-label="推論結果"></section>`;
         }
-            card.dataset.palette = String((child.child_id - 1) % 8);
+
+        card.dataset.palette = String((child.child_id - 1) % 8);
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
         card.classList.toggle('has-model-warning', state.mlAnomalies[child.child_id]?.warning === true);
         card.querySelector('.student-name').innerHTML = nameHtml;
 
         const latestDistanceDataAt = state.dataFreshness.childDistance[child.child_id];
         const nearestIsStale = isFreshnessStale(latestDistanceDataAt, SENSOR_DATA_STALE_MS);
-        const nearestName = state.nearestNames[child.child_id];
+        const nearestName = wanakana.toHiragana(state.nearestNames[child.child_id]);
 
         let nearestPerson = card.querySelector('.nearest-person');
 
@@ -877,10 +878,7 @@ function renderStudents() {
             nearestPerson = document.createElement('div');
             nearestPerson.className = 'nearest-person';
 
-            card
-                .querySelector(
-                    '.student-steps'
-                )
+            card.querySelector('.student-steps')
                 .insertAdjacentElement(
                     'afterend',
                     nearestPerson
@@ -991,7 +989,7 @@ function renderStudents() {
 
                 return `
                     <div class="relation-score-row${staleClass(relationIsStale)}">
-                        <strong>${escapeHtml(other.name || `子ども${other.child_id}`)}</strong>
+                        <strong>${escapeHtml(wanakana.toHiragana(other.name || `子ども${other.child_id}`))}</strong>
                         <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                         <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                         <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
@@ -1221,19 +1219,18 @@ function renderOpenStudentDetailModal() {
         state.mlDetailOpenStates[childId].baseline = currentBaselineDetails.open;
     }
 
-
     if (currentRelationDetails) {
         state.mlDetailOpenStates[childId].relation = currentRelationDetails.open;
     }
 
-    document.getElementById('studentDetailTitle').textContent = `${child.name || `子ども${childId}`}の詳細`;
+    document.getElementById('studentDetailTitle').textContent = `${wanakana.toHiragana(child.name || `子ども${childId}`)}の詳細`;
 
     content.innerHTML = `
         <div class="student-detail-summary">
-            <strong>${escapeHtml(child.name || `子ども${childId}`)}</strong>
+            <strong>${escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`))}</strong>
             <span>${escapeHtml(
                 state.nearestNames[childId]
-                    ? `最も近くにいる人：${state.nearestNames[childId]}`
+                    ? `最も近くにいる人：${wanakana.toHiragana(state.nearestNames[childId])}`
                     : '近くにいる人：データなし'
             )}</span>
             <span>歩数：${(state.steps[childId] || 0).toLocaleString()}</span>
@@ -1279,7 +1276,7 @@ function renderRanking() {
     document.querySelectorAll('#rankingList li').forEach((item, index) => {
         const entry = ranking[index];
         item.innerHTML = entry
-            ? `<span>${index + 1}.</span><strong>${escapeHtml(entry.name || `子ども${entry.child_id}`)}</strong>`
+            ? `<span>${index + 1}.</span><strong>${escapeHtml(wanakana.toHiragana(entry.name || `子ども${entry.child_id}`))}</strong>`
             : `<span>${index + 1}.</span><strong>-</strong>`;
     });
 }
@@ -1291,7 +1288,7 @@ function renderModelAnomalyWarnings() {
 
     for (const child of state.children) {
         const childId = Number(child.child_id);
-        const childName = escapeHtml(child.name || `子ども${childId}`);
+        const childName = escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`));
         const anomaly = state.mlAnomalies[childId];
 
         if (anomaly?.warning === true) {
@@ -1385,7 +1382,7 @@ function renderWarnings(warnings) {
     }
     warningList.innerHTML = visibleWarnings.map((warning) => `
         <article class="warning-item">
-            <strong>${escapeHtml(warning.name)}</strong>
+            <strong>${escapeHtml(wanakana.toHiragana(warning.name))}</strong>
             <span>歩数 ${warning.current_steps.toLocaleString()}歩</span>
             <small>普段の${warning.percent}%（平均 ${warning.average_steps.toLocaleString()}歩）</small>
         </article>`).join('');
@@ -1427,7 +1424,7 @@ function renderRelationSummary() {
 
             rows.push(`
                 <div class="relation-pair${staleClass(relationIsStale)}">
-                    <strong>${escapeHtml(child1.name)} ↔ ${escapeHtml(child2.name)}</strong>
+                    <strong>${escapeHtml(wanakana.toHiragana(child1.name))} ↔ ${escapeHtml(wanakana.toHiragana(child2.name))}</strong>
                     <span>距離状態: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
                     <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
                     <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
@@ -1604,7 +1601,7 @@ function renderRelatedNetwork() {
                 y="${node.y}"
                 text-anchor="middle"
                 dominant-baseline="middle">
-                ${escapeHtml(node.name)}
+                ${escapeHtml(wanakana.toHiragana(node.name))}
             </text>
         </g>
     `).join('');
@@ -1770,8 +1767,8 @@ async function refreshStudentManageList() {
         const isTeacher = isTeacherFlag(child.child_id);
         return `<tr class="student-manage-row ${isTeacher ? 'is-teacher' : ''}" data-manage-row="${child.child_id}">
             <td>${child.child_id}</td>
-            <td class="student-manage-name">${escapeHtml(child.name)}</td>
-            <td><select data-manage-class="${child.child_id}" aria-label="${escapeHtml(child.name)}の所属クラス">
+            <td class="student-manage-name">${escapeHtml(wanakana.toHiragana(child.name))}</td>
+            <td><select data-manage-class="${child.child_id}" aria-label="${escapeHtml(wanakana.toHiragana(child.name))}の所属クラス">
                 <option value="">未所属</option>
                 ${classes.map((item) => `<option value="${item.class_id}" ${item.class_id === child.class_id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
             </select></td>
@@ -1783,9 +1780,9 @@ async function refreshStudentManageList() {
     }).join('') : '<tr><td colspan="4">登録されている子どもはいません</td></tr>';
     document.getElementById('studentDeleteList').innerHTML = children.length ? children.map((child) => `
         <tr>
-            <td><input type="checkbox" data-delete-child="${child.child_id}" aria-label="${escapeHtml(child.name)}を削除対象にする"></td>
+            <td><input type="checkbox" data-delete-child="${child.child_id}" aria-label="${escapeHtml(wanakana.toHiragana(child.name))}を削除対象にする"></td>
             <td>${child.child_id}</td>
-            <td>${escapeHtml(child.name)}</td>
+            <td>${escapeHtml(wanakana.toHiragana(child.name))}</td>
             <td>${escapeHtml(classNames.get(child.class_id) || '未所属')}</td>
         </tr>`).join('') : '<tr><td colspan="4">削除できる子どもはいません</td></tr>';
     document.getElementById('selectAllStudentDelete').checked = false;
