@@ -768,13 +768,59 @@ function getWifiSignalLevel(wifiRssi) {
 function renderStudents() {
     const grid = document.getElementById('studentGrid');
     const isSelectedToday = isToday(state.selectedDate);
+
+    const staleChildIds = new Set(
+        state.children
+            .filter((child) =>
+                isFreshnessStale(
+                    state.dataFreshness.childData[child.child_id],
+                    SENSOR_DATA_STALE_MS
+                )
+            )
+            .map((child) => child.child_id)
+    );
+
+    let staleDetails = document.getElementById('staleStudentDetails');
+
+    if (!staleDetails) {
+        staleDetails = document.createElement('details');
+        staleDetails.id = 'staleStudentDetails';
+        staleDetails.className = 'stale-student-details';
+
+        staleDetails.innerHTML = `<summary></summary>`;
+
+        grid.insertAdjacentElement('beforebegin', staleDetails);
+
+        staleDetails.addEventListener('toggle', () => {
+            grid.querySelectorAll('[data-student-card]').forEach((card) => {
+                const childId = Number(card.dataset.studentCard);
+
+                const isStale = isFreshnessStale(
+                    state.dataFreshness.childData[childId],
+                    SENSOR_DATA_STALE_MS
+                );
+
+                if (isStale) {
+                    card.hidden = !staleDetails.open;
+                }
+            });
+        });
+    }
+
+    staleDetails.querySelector('summary').textContent = `1分以上データの更新が無い子ども（${staleChildIds.size}人）`;
+
+    staleDetails.hidden = staleChildIds.size === 0;
+
     if (!state.children.length) {
         grid.innerHTML = '<div class="loading">このクラスに子どものデータがありません</div>';
         ensureSignageAutoScroll();
         return;
     }
+
     grid.querySelector('.loading')?.remove();
+
     const previousPositions = new Map();
+
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         card.getAnimations()
             .filter((animation) => animation.id === 'student-reorder')
@@ -811,6 +857,7 @@ function renderStudents() {
     grid.querySelectorAll('[data-student-card]').forEach((card) => {
         if (!visibleIds.has(Number(card.dataset.studentCard))) card.remove();
     });
+    
     sorted.forEach((child, index) => {
         const deviceStatus = state.deviceStatuses[child.child_id];
         const statusAge = deviceStatus ? Date.now() - Date.parse(deviceStatus.updated_at) : Infinity;
@@ -863,6 +910,10 @@ function renderStudents() {
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
         card.classList.toggle('has-model-warning', state.mlAnomalies[child.child_id]?.warning === true);
         card.querySelector('.student-name').innerHTML = nameHtml;
+
+        const childIsStale = staleChildIds.has(child.child_id);
+
+        card.hidden = childIsStale && !staleDetails.open;
 
         const latestDistanceDataAt = state.dataFreshness.childDistance[child.child_id];
         const nearestIsStale = isFreshnessStale(latestDistanceDataAt, SENSOR_DATA_STALE_MS);

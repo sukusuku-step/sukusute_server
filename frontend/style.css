@@ -2240,3 +2240,12 @@ body.square-mode.signage-mode .nearest-person {
     font-weight: 700;
     white-space: nowrap;
 }
+
+.stale-student-details {
+    margin-bottom: 10px;
+}
+
+.stale-student-details summary {
+    cursor: pointer;
+    font-weight: 700;
+}
