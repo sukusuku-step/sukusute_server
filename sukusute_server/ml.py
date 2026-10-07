@@ -36,6 +36,16 @@ RELATEDNESS_MAX_HISTORY = 100
 # calc_relatednessへ渡すデータは最大で過去何日分までか
 RELATEDNESS_MAX_STEPS_MINUTES = 14
 
+# BEHAVIOR_SESSION_GAP_MINUTES以上時間が空いたらセッション境界を更新する
+ML_SESSION_GAP_MINUTES = 30
+
+# Progress表示: ML_SESSION_GAP_MINUTESの空きがあった場合には新しくそこを0%として再開
+# Behavior推論: ML_SESSION_GAP_MINUTESの空きがあった場合には新しく6000行をそこから見て貯める
+# Distance推論: ML_SESSION_GAP_MINUTESの空きがあった場合には新しく6000行をそこから見て貯める
+# Relatedness算出: ML_SESSION_GAP_MINUTESの空きがあった場合にはDistance推論と同じタイミングで推論結果から算出する
+# Activity推論: ML_SESSION_GAP_MINUTESの空きがあった場合には新しく境界を設定して直近1時間（最低でも10分はある）のデータを使う
+# Baseline算出: ML_SESSION_GAP_MINUTESの空きがあった場合には、Behavior推論と同タイミングで過去データを用いてbaselineを計算する
+
 ANOMALY_EPS = 1e-6
 
 latest_anomaly_results: dict[int, dict] = {}
@@ -162,23 +172,74 @@ def compare_current_with_baseline(
     }
 
 async def _latest_behavior_processed_boundary(dbsession, child_id: int):
-    """旧/新どちらの履歴dateでも、実データ上の処理済み境界へ正規化する。"""
-    latest_evaluation_date = await dbsession.scalar(
-        select(func.max(
-            sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.date
-        )).where(
-            sukusute_server.database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id
-        )
-    )
-    if latest_evaluation_date is None:
-        return None
-    return await dbsession.scalar(
-        select(func.max(sukusute_server.database_models.SingleChildData.date)).where(
-            sukusute_server.database_models.SingleChildData.child_id == child_id,
-            sukusute_server.database_models.SingleChildData.date <= latest_evaluation_date,
+    """
+    実際のbehavior推論済み境界に加えて、30分以上データが途切れた場合は、その空白を新しい境界として扱う。
+    """
+    persisted_boundary = await dbsession.scalar(
+        select(
+            func.max(
+                sukusute_server.database_models
+                .ChildBehaviorDataEvaluationHistory.date
+            )
+        ).where(
+            sukusute_server.database_models
+            .ChildBehaviorDataEvaluationHistory.child_id
+            == child_id
         )
     )
 
+    if persisted_boundary is not None:
+        persisted_boundary = await dbsession.scalar(
+            select(
+                func.max(
+                    sukusute_server.database_models
+                    .SingleChildData.date
+                )
+            ).where(
+                sukusute_server.database_models
+                .SingleChildData.child_id == child_id,
+                sukusute_server.database_models
+                .SingleChildData.date <= persisted_boundary,
+            )
+        )
+
+    stmt = (
+        select(
+            sukusute_server.database_models.SingleChildData.date
+        )
+        .where(
+            sukusute_server.database_models
+            .SingleChildData.child_id == child_id
+        )
+        .order_by(
+            sukusute_server.database_models
+            .SingleChildData.date.asc()
+        )
+    )
+
+    if persisted_boundary is not None:
+        stmt = stmt.where(
+            sukusute_server.database_models
+            .SingleChildData.date > persisted_boundary
+        )
+
+    dates = (await dbsession.execute(stmt)).scalars().all()
+
+    if not dates:
+        return persisted_boundary
+
+    effective_boundary = persisted_boundary
+    previous_date = persisted_boundary
+
+    # 30分以上計測データの間隔が空いていたら
+    for current_date in dates:
+        if (previous_date is not None and current_date - previous_date >= datetime.timedelta(minutes=ML_SESSION_GAP_MINUTES)):
+            # 空白直前までを「処理済み」とみなす。（以後のprogressはここから0%スタート）
+            effective_boundary = previous_date
+
+        previous_date = current_date
+
+    return effective_boundary
 
 async def get_behavior_progress(dbsession, child_id: int) -> tuple[datetime.datetime | None, int]:
     """behavior推論とprogress表示で共通利用する未処理行数をDBから算出する。"""
@@ -195,16 +256,14 @@ async def get_behavior_progress(dbsession, child_id: int) -> tuple[datetime.date
     pending_rows = int(await dbsession.scalar(count_stmt) or 0)
     return processed_boundary, pending_rows
 
-
 async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                         child_id: int,
                         distance_child_ids: list[int]) -> None:
     lock = behavior_evaluation_locks.setdefault(child_id, asyncio.Lock())
+
     async with lock:
         while True:
-            processed_boundary = await _latest_behavior_processed_boundary(
-                dbsession, child_id
-            )
+            processed_boundary = await _latest_behavior_processed_boundary(dbsession, child_id)
 
             pending_stmt = select(
                 sukusute_server.database_models.SingleChildData
@@ -235,9 +294,7 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                 break
 
             evaluation_data_end = single_records_10min[-1].date
-            current_10min_features = calculate_current_10min_features(
-                single_records_10min
-            )
+            current_10min_features = calculate_current_10min_features(single_records_10min)
 
             behavior_input = np.fromiter(((
                 record.steps,
@@ -270,10 +327,19 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
             activity_cutoff = evaluation_data_end - datetime.timedelta(
                 minutes=ACTIVITY_MAX_DATA_MINUTES
             )
+
             activity_records = [
                 record for record in single_records
                 if record.date >= activity_cutoff
             ]
+
+            for index in range(len(activity_records) - 1, 0, -1):
+                if (
+                    activity_records[index].date
+                    - activity_records[index - 1].date >= datetime.timedelta(minutes=ML_SESSION_GAP_MINUTES)
+                ):
+                    activity_records = activity_records[index:]
+                    break
 
             # activity_infer は最低6000サンプルを要求する。
             # 時刻ベースの履歴窓が疎で6000件未満になった場合でも、
@@ -377,24 +443,85 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
             }
 
 async def _latest_distance_processed_boundary(dbsession, pair: tuple[int, int]):
-    latest_evaluation_date = await dbsession.scalar(
-        select(func.max(
-            sukusute_server.database_models.ChildDistanceEvaluationHistory.date
-        )).where(and_(
-            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == pair[0],
-            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == pair[1],
-        ))
-    )
-    if latest_evaluation_date is None:
-        return None
-    return await dbsession.scalar(
-        select(func.max(sukusute_server.database_models.ChildDistanceData.date)).where(
-            sukusute_server.database_models.ChildDistanceData.child_id_1 == pair[0],
-            sukusute_server.database_models.ChildDistanceData.child_id_2 == pair[1],
-            sukusute_server.database_models.ChildDistanceData.date <= latest_evaluation_date,
+    """
+    実際のdistance推論済み境界に加えて、30分以上データが途切れた場合は、その空白を新しいセッション境界として扱う。
+    """
+    persisted_boundary = await dbsession.scalar(
+        select(
+            func.max(
+                sukusute_server.database_models
+                .ChildDistanceEvaluationHistory.date
+            )
+        ).where(
+            and_(
+                sukusute_server.database_models
+                .ChildDistanceEvaluationHistory.child_id_1
+                == pair[0],
+
+                sukusute_server.database_models
+                .ChildDistanceEvaluationHistory.child_id_2
+                == pair[1]
+            )
         )
     )
 
+    if persisted_boundary is not None:
+        persisted_boundary = await dbsession.scalar(
+            select(
+                func.max(
+                    sukusute_server.database_models
+                    .ChildDistanceData.date
+                )
+            ).where(
+                sukusute_server.database_models
+                .ChildDistanceData.child_id_1 == pair[0],
+                sukusute_server.database_models
+                .ChildDistanceData.child_id_2 == pair[1],
+                sukusute_server.database_models
+                .ChildDistanceData.date <= persisted_boundary
+            )
+        )
+
+    stmt = (
+        select(
+            sukusute_server.database_models
+            .ChildDistanceData.date
+        )
+        .where(
+            sukusute_server.database_models
+            .ChildDistanceData.child_id_1 == pair[0],
+
+            sukusute_server.database_models
+            .ChildDistanceData.child_id_2 == pair[1]
+        )
+        .order_by(
+            sukusute_server.database_models
+            .ChildDistanceData.date.asc()
+        )
+    )
+
+    if persisted_boundary is not None:
+        stmt = stmt.where(
+            sukusute_server.database_models
+            .ChildDistanceData.date > persisted_boundary
+        )
+
+    dates = (await dbsession.execute(stmt)).scalars().all()
+
+    if not dates:
+        return persisted_boundary
+
+    effective_boundary = persisted_boundary
+    previous_date = persisted_boundary
+
+    for current_date in dates:
+        if (previous_date is not None and current_date - previous_date >= datetime.timedelta(minutes=ML_SESSION_GAP_MINUTES)):
+            # 30分以上空いた場合、空白より前の未処理distanceは次の推論へ持ち越さない。
+            effective_boundary = previous_date
+
+        previous_date = current_date
+
+    return effective_boundary
 
 async def evaluate_distance_data(
     dbsession: sukusute_server.database_models.SessionDep,
