@@ -671,14 +671,7 @@ async def evaluate_distance_data(
                     )
                 ).scalars().all()
 
-                history = list(reversed(history))
-
-                steps_cutoff = (
-                    evaluation_data_end
-                    - datetime.timedelta(
-                        minutes=RELATEDNESS_MAX_STEPS_MINUTES
-                    )
-                )
+                steps_cutoff = evaluation_data_end - datetime.timedelta(minutes=RELATEDNESS_MAX_STEPS_MINUTES)
 
                 data1 = np.asarray((
                     await dbsession.execute(
@@ -721,18 +714,24 @@ async def evaluate_distance_data(
                     )
                 ).scalars().all(), dtype=np.float32)
 
+                history = list(reversed(history))
+
+                # DBのEnumを文字列へ変換
+                history = [
+                    label.value if hasattr(label, "value") else label
+                    for label in history
+                ]
+
+                # 今回のDistance推論結果も最新履歴として含める
+                history.append(distance_result["label"])
+
                 # 歩数の類似度と過去の相対距離の推論結果を利用する関連度スコア計算
-                if history:
-                    relatedness_result = await run_ml_inference(
-                        sukusute_machine_learning.utils
-                        .relatedness.calc_relatedness,
-                        history,
-                        data1,
-                        data2
-                    )
-                else:
-                    # 初回は過去履歴が存在しないので関連度は初期値を入れておく
-                    relatedness_result = 0.0
+                relatedness_result = await run_ml_inference(
+                    sukusute_machine_learning.utils.relatedness.calc_relatedness,
+                    history,
+                    data1,
+                    data2
+                )
 
                 dbsession.add(
                     sukusute_server.database_models
