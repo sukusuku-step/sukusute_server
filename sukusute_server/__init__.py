@@ -492,7 +492,6 @@ async def _run_behavior_evaluation_with_new_session(
     child_id: int,
 ) -> None:
     """行動系MLを独立Sessionで実行する。"""
-
     session_factory = async_sessionmaker(
         bind=db_bind,
         expire_on_commit=False
@@ -500,46 +499,66 @@ async def _run_behavior_evaluation_with_new_session(
 
     try:
         async with session_factory() as ml_session:
-            await ml.evaluate_data(
-                ml_session,
-                child_id,
-                []
+            previous_behavior_completion = ml.latest_behavior_completion.get(child_id)
+            
+            previous_processed_through = (
+                previous_behavior_completion["processed_through"]
+                if previous_behavior_completion is not None
+                else None
             )
+
+            await ml.evaluate_data(ml_session, child_id, [])
+
+            current_behavior_completion = ml.latest_behavior_completion.get(child_id)
+            
+            current_processed_through = (
+                current_behavior_completion["processed_through"]
+                if current_behavior_completion is not None
+                else None
+            )
+
+            # この呼び出しでBehavior推論が新しく完了した場合だけ、
+            # 同じ6000行の区切りに対応するDistance推論を実行する。
+            if (
+                current_processed_through is None
+                or current_processed_through == previous_processed_through
+            ):
+                return
+
+            # Distance推論はBehaviorと同じ6000行の区切りで実行する。
+            # 現在CSVヘッダーに相手が出ていなくても、一度でも認識したペアは対象に残す。
+            known_pairs = (
+                await ml_session.execute(
+                    sqlalchemy.select(
+                        database_models.ChildDistanceData.child_id_1,
+                        database_models.ChildDistanceData.child_id_2,
+                    )
+                    .where(
+                        or_(
+                            database_models.ChildDistanceData.child_id_1 == child_id,
+                            database_models.ChildDistanceData.child_id_2 == child_id,
+                        )
+                    )
+                    .distinct()
+                )
+            ).all()
+
+            distance_child_ids = sorted({
+                pair_child_id_2 if pair_child_id_1 == child_id else pair_child_id_1
+                for pair_child_id_1, pair_child_id_2 in known_pairs
+            })
+
+            if distance_child_ids:
+                await ml.evaluate_distance_data(
+                    ml_session,
+                    child_id,
+                    distance_child_ids
+                )
 
     except Exception:
         logger.exception(
             "Behavior ML evaluation failed for child_id=%s",
             child_id
-        )
-
-async def _run_distance_evaluation_with_new_session(
-    db_bind,
-    child_id: int,
-    distance_child_ids: list[int],
-) -> None:
-    """相対距離MLを行動推論とは独立して実行する。"""
-
-    if not distance_child_ids:
-        return
-
-    session_factory = async_sessionmaker(
-        bind=db_bind,
-        expire_on_commit=False
-    )
-
-    try:
-        async with session_factory() as ml_session:
-            await ml.evaluate_distance_data(
-                ml_session,
-                child_id,
-                distance_child_ids
-            )
-
-    except Exception:
-        logger.exception(
-            "Distance ML evaluation failed for child_id=%s distance_child_ids=%s",
-            child_id,
-            distance_child_ids
         )
 
 @app.post("/api/push_csv/{child_id}", tags=["API"])
@@ -556,31 +575,58 @@ async def push_csv(
     # CSVの先頭行はヘッダーで、各行のtimestampは開始日時からの経過秒数。
     parsed_csv = list(csv.reader(io.StringIO(body.decode(encoding="utf-8"))))
     _, _, _, _, _, _, _, _, _, _, _, _, *distance_children = parsed_csv[0]
+
     del parsed_csv[0]
+
     start_time = datetime.datetime.fromisoformat(parsed_csv[0][11])
     parsed_distance_children: list[int] = []
     for child in distance_children:
         parsed_distance_children.append(int(child[9:]))
 
-    # CSVヘッダーに記載された相手児童のIDは、登録解除済み/未登録の場合がある。
-    # 存在しないchild_idをdistance_data_rowsに含めるとFK違反でinsert全体が失敗するため、
-    # 事前に実在するchild_idだけに絞り込む。
     existing_distance_children = set((await dbsession.execute(
         sqlalchemy.select(database_models.Child.child_id)
         .where(database_models.Child.child_id.in_(set(parsed_distance_children)))
     )).scalars().all())
+
     missing_distance_children = set(parsed_distance_children) - existing_distance_children
+    
     if missing_distance_children:
         logger.warning(
             "push_csv: child_id=%s から送信されたdistanceの相手child_id %s は存在しないため無視します。",
             child_id, sorted(missing_distance_children),
         )
 
+    # 一度でも認識した相手は、その後CSVヘッダーから一時的に消えてもDistance系列をNaNで継続できるよう対象に残す。
+    historical_pairs = (
+        await dbsession.execute(
+            sqlalchemy.select(
+                database_models.ChildDistanceData.child_id_1,
+                database_models.ChildDistanceData.child_id_2
+            )
+            .where(
+                or_(
+                    database_models.ChildDistanceData.child_id_1 == child_id,
+                    database_models.ChildDistanceData.child_id_2 == child_id
+                )
+            )
+            .distinct()
+        )
+    ).all()
+
+    historical_distance_children = {
+        child_id_2 if child_id_1 == child_id else child_id_1
+        for child_id_1, child_id_2 in historical_pairs
+    }
+
+    known_distance_children = existing_distance_children | historical_distance_children
+
     child_data_rows = []
     distance_data_rows = []
+
     for row in parsed_csv:
         timestamp, steps, ax, ay, az, gx, gy, gz, mx, my, mz, _, *distances = row
         calculated_time = start_time + datetime.timedelta(seconds=float(timestamp))
+
         child_data_rows.append({
             "child_id": child_id,
             "date": calculated_time,
@@ -589,34 +635,96 @@ async def push_csv(
             "gx": float(gx), "gy": float(gy), "gz": float(gz),
             "mx": float(mx), "my": float(my), "mz": float(mz),
         })
-        for i, distance in enumerate(distances):
-            if not distance.strip():
-                continue
-            other_child_id = parsed_distance_children[i]
+
+        distance_by_child = {}
+        for i, other_child_id in enumerate(parsed_distance_children):
             if other_child_id not in existing_distance_children:
                 continue
+
+            distance = distances[i] if i < len(distances) else ""
+            distance_by_child[other_child_id] = (
+                float(distance)
+                if distance.strip()
+                else float("nan")
+            )
+
+        # 一度でも認識した全相手について、各センサ行に必ず1行のDistanceを持たせる。
+        # 今回のCSVに相手列が無い・測距値が空欄ならNaNを保存する。
+        for other_child_id in known_distance_children:
             distance_data_rows.append({
                 "child_id_1": min(child_id, other_child_id),
                 "child_id_2": max(child_id, other_child_id),
                 "date": calculated_time,
-                "distance": float(distance),
+                "distance": distance_by_child.get(
+                    other_child_id,
+                    float("nan")
+                ),
             })
+
+    # 新しい相手が途中から初めて現れた場合は、直近10分の既存SingleChildDataに対してまだ存在しないDistance行をNaNで補完する。
+    if child_data_rows and existing_distance_children:
+        latest_data_time = child_data_rows[-1]["date"]
+        current_batch_start = child_data_rows[0]["date"]
+        distance_backfill_cutoff = latest_data_time - datetime.timedelta(minutes=10)
+
+        historical_dates = (
+            await dbsession.execute(
+                sqlalchemy.select(database_models.SingleChildData.date)
+                .where(
+                    database_models.SingleChildData.child_id == child_id,
+                    database_models.SingleChildData.date >= distance_backfill_cutoff,
+                    database_models.SingleChildData.date < current_batch_start,
+                )
+                .order_by(database_models.SingleChildData.date.asc())
+            )
+        ).scalars().all()
+
+        for other_child_id in existing_distance_children:
+            pair_child_id_1 = min(child_id, other_child_id)
+            pair_child_id_2 = max(child_id, other_child_id)
+
+            existing_distance_dates = set((
+                await dbsession.execute(
+                    sqlalchemy.select(database_models.ChildDistanceData.date)
+                    .where(
+                        database_models.ChildDistanceData.child_id_1 == pair_child_id_1,
+                        database_models.ChildDistanceData.child_id_2 == pair_child_id_2,
+                        database_models.ChildDistanceData.date >= distance_backfill_cutoff,
+                        database_models.ChildDistanceData.date < current_batch_start,
+                    )
+                )
+            ).scalars().all())
+
+            distance_data_rows.extend(
+                {
+                    "child_id_1": pair_child_id_1,
+                    "child_id_2": pair_child_id_2,
+                    "date": historical_date,
+                    "distance": float("nan"),
+                }
+                for historical_date in historical_dates
+                if historical_date not in existing_distance_dates
+            )
 
     if child_data_rows:
         child_data_insert = pg_insert(database_models.SingleChildData).on_conflict_do_nothing(
             index_elements=["child_id", "date", "steps"]
         )
         await dbsession.execute(child_data_insert, child_data_rows)
+
     if distance_data_rows:
         distance_insert = pg_insert(database_models.ChildDistanceData).on_conflict_do_nothing(
             index_elements=["child_id_1", "child_id_2", "date"]
         )
         await dbsession.execute(distance_insert, distance_data_rows)
+
     await dbsession.commit()
 
     received_at = datetime.datetime.now()
+    
     if child_data_rows:
         sensor_data_received_at[child_id] = received_at
+
     if distance_data_rows:
         distance_child_ids = {
             row["child_id_1"]
@@ -625,6 +733,7 @@ async def push_csv(
             row["child_id_2"]
             for row in distance_data_rows
         }
+
         for distance_child_id in distance_child_ids:
             distance_data_received_at[distance_child_id] = received_at
 
@@ -632,17 +741,6 @@ async def push_csv(
         _run_behavior_evaluation_with_new_session,
         dbsession.bind,
         child_id
-    )
-
-    background_tasks.add_task(
-        _run_distance_evaluation_with_new_session,
-        dbsession.bind,
-        child_id,
-        [
-            other_child_id
-            for other_child_id in parsed_distance_children
-            if other_child_id in existing_distance_children
-        ]
     )
 
     return http_models.Result(status="ok")
@@ -672,7 +770,6 @@ async def search_child_by_name(
     )
     await dbsession.commit()
     return res
-
 
 @app.get("/api/children/{child_id:int}", tags=["API"])
 async def child_info(
@@ -718,9 +815,9 @@ async def child_info(
                 ][0].child_id
             )
             for distance in target_child.distances
+            if math.isfinite(distance.distance)
         ]
     )
-
 
 # ===== 児童一覧 =====
 
@@ -735,8 +832,8 @@ async def api_create_debug_child(
     )
     dbsession.add(child)
     await dbsession.commit()
-    return http_models.Result(status="ok")
 
+    return http_models.Result(status="ok")
 
 @app.get("/api/children", tags=["API"])
 async def list_children(
@@ -763,7 +860,6 @@ async def list_children(
             for child in children
         ]
     )
-
 
 @app.delete("/api/children", tags=["API", "Children"])
 async def delete_children(
@@ -823,7 +919,6 @@ async def delete_children(
     return http_models.Result(
         status="ok", msg=f"{len(child_ids)}人の子どもと関連データを削除しました"
     )
-
 
 # ===== 歩数データAPI =====
 
@@ -926,7 +1021,6 @@ async def get_child_steps(
         goal_met=today_steps >= DAILY_STEP_GOAL
     )
 
-
 @app.get("/api/children/{child_id:int}/steps/history", tags=["API"])
 async def get_child_steps_history(
     child_id: int,
@@ -961,7 +1055,6 @@ async def get_child_steps_history(
         name=(await dbsession.get(database_models.Child, child_id)).name,
         history=steps_history
     )
-
 
 # ===== 集計情報API =====
 
@@ -1312,6 +1405,9 @@ async def get_child_distances(
 
     distances = []
     for record, other_name in distance_records:
+        if not math.isfinite(record.distance):
+            continue
+
         # 相手IDを取得
         other_id = (
             record.child_id_2
@@ -1400,6 +1496,9 @@ async def get_distance_today_stats(
     child_distances = {}
 
     for record, name1, name2 in distance_records:
+        if not math.isfinite(record.distance):
+            continue
+
         total_distance += record.distance
         meeting_count += 1
 
@@ -1507,7 +1606,11 @@ async def get_monthly_stats(
         )
     )).scalars().all()
 
-    month_total_distance = sum(d.distance for d in all_distance_data)
+    month_total_distance = sum(
+        d.distance
+        for d in all_distance_data
+        if math.isfinite(d.distance)
+    )
 
     # 残日数
     today = datetime.datetime.now()

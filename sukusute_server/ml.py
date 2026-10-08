@@ -446,9 +446,15 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                 "evaluated_at": completed_at
             }
 
-async def _latest_distance_processed_boundary(dbsession, pair: tuple[int, int]):
+async def _latest_distance_processed_boundary(
+    dbsession,
+    child_id: int,
+    pair: tuple[int, int]
+):
     """
-    実際のdistance推論済み境界に加えて、30分以上データが途切れた場合は、その空白を新しいセッション境界として扱う。
+    Distance推論済み境界を返す。
+    発火基準はChildDistanceDataの件数ではなく、Behaviorと同じSingleChildDataの時系列とする。
+    これによりDistance欠損が何回発生しても6000行不足にはならない。
     """
     persisted_boundary = await dbsession.scalar(
         select(
@@ -459,12 +465,9 @@ async def _latest_distance_processed_boundary(dbsession, pair: tuple[int, int]):
         ).where(
             and_(
                 sukusute_server.database_models
-                .ChildDistanceEvaluationHistory.child_id_1
-                == pair[0],
-
+                .ChildDistanceEvaluationHistory.child_id_1 == pair[0],
                 sukusute_server.database_models
-                .ChildDistanceEvaluationHistory.child_id_2
-                == pair[1]
+                .ChildDistanceEvaluationHistory.child_id_2 == pair[1]
             )
         )
     )
@@ -474,40 +477,34 @@ async def _latest_distance_processed_boundary(dbsession, pair: tuple[int, int]):
             select(
                 func.max(
                     sukusute_server.database_models
-                    .ChildDistanceData.date
+                    .SingleChildData.date
                 )
             ).where(
                 sukusute_server.database_models
-                .ChildDistanceData.child_id_1 == pair[0],
+                .SingleChildData.child_id == child_id,
                 sukusute_server.database_models
-                .ChildDistanceData.child_id_2 == pair[1],
-                sukusute_server.database_models
-                .ChildDistanceData.date <= persisted_boundary
+                .SingleChildData.date <= persisted_boundary
             )
         )
 
     stmt = (
         select(
-            sukusute_server.database_models
-            .ChildDistanceData.date
+            sukusute_server.database_models.SingleChildData.date
         )
         .where(
             sukusute_server.database_models
-            .ChildDistanceData.child_id_1 == pair[0],
-
-            sukusute_server.database_models
-            .ChildDistanceData.child_id_2 == pair[1]
+            .SingleChildData.child_id == child_id
         )
         .order_by(
             sukusute_server.database_models
-            .ChildDistanceData.date.asc()
+            .SingleChildData.date.asc()
         )
     )
 
     if persisted_boundary is not None:
         stmt = stmt.where(
             sukusute_server.database_models
-            .ChildDistanceData.date > persisted_boundary
+            .SingleChildData.date > persisted_boundary
         )
 
     dates = (await dbsession.execute(stmt)).scalars().all()
@@ -519,8 +516,11 @@ async def _latest_distance_processed_boundary(dbsession, pair: tuple[int, int]):
     previous_date = persisted_boundary
 
     for current_date in dates:
-        if (previous_date is not None and current_date - previous_date >= datetime.timedelta(minutes=ML_SESSION_GAP_MINUTES)):
-            # 30分以上空いた場合、空白より前の未処理distanceは次の推論へ持ち越さない。
+        if (
+            previous_date is not None
+            and current_date - previous_date >= datetime.timedelta(minutes=ML_SESSION_GAP_MINUTES)
+        ):
+            # Behaviorと同じく、30分以上空いた場合は空白直前を新しい境界とする。
             effective_boundary = previous_date
 
         previous_date = current_date
@@ -532,63 +532,140 @@ async def evaluate_distance_data(
     child_id: int,
     distance_child_ids: list[int]
 ) -> None:
+    """
+    Behaviorと同じSingleChildDataの6000行単位でDistance推論を行う。
+    """
     if not distance_child_ids:
         return
 
     for other_child_id in set(distance_child_ids):
-        pair = (min(child_id, other_child_id), max(child_id, other_child_id))
-        pair_lock = distance_evaluation_locks.setdefault(pair, asyncio.Lock())
+        pair = (
+            min(child_id, other_child_id),
+            max(child_id, other_child_id)
+        )
+        pair_lock = distance_evaluation_locks.setdefault(
+            pair,
+            asyncio.Lock()
+        )
 
         async with pair_lock:
             while True:
-                processed_boundary = await _latest_distance_processed_boundary(
-                    dbsession, pair
+                processed_boundary = (
+                    await _latest_distance_processed_boundary(
+                        dbsession,
+                        child_id,
+                        pair
+                    )
                 )
-                stmt = select(
-                    sukusute_server.database_models.ChildDistanceData
+
+                # Behavior推論と同じ基準となる児童センサデータ6000行を取得する。
+                sensor_stmt = select(
+                    sukusute_server.database_models.SingleChildData
                 ).where(
-                    sukusute_server.database_models.ChildDistanceData.child_id_1 == pair[0],
-                    sukusute_server.database_models.ChildDistanceData.child_id_2 == pair[1],
+                    sukusute_server.database_models
+                    .SingleChildData.child_id == child_id
                 )
+
                 if processed_boundary is not None:
-                    stmt = stmt.where(
-                        sukusute_server.database_models.ChildDistanceData.date > processed_boundary
-                    ).order_by(
-                        sukusute_server.database_models.ChildDistanceData.date.asc()
-                    ).limit(6000)
-                    records = (await dbsession.execute(stmt)).scalars().all()
+                    sensor_stmt = (
+                        sensor_stmt
+                        .where(
+                            sukusute_server.database_models
+                            .SingleChildData.date > processed_boundary
+                        )
+                        .order_by(
+                            sukusute_server.database_models
+                            .SingleChildData.date.asc()
+                        )
+                        .limit(6000)
+                    )
+                    sensor_records = (await dbsession.execute(sensor_stmt)).scalars().all()
                 else:
-                    stmt = stmt.order_by(
-                        sukusute_server.database_models.ChildDistanceData.date.desc()
-                    ).limit(6000)
-                    records = list(reversed(
-                        (await dbsession.execute(stmt)).scalars().all()
+                    # Behavior初回と同じく、過去データが多くても最新6000行を使う。
+                    sensor_stmt = (
+                        sensor_stmt
+                        .order_by(
+                            sukusute_server.database_models
+                            .SingleChildData.date.desc()
+                        )
+                        .limit(6000)
+                    )
+                    sensor_records = list(reversed(
+                        (await dbsession.execute(sensor_stmt)).scalars().all()
                     ))
 
-                if len(records) < 6000:
+                if len(sensor_records) < 6000:
                     break
 
-                evaluation_data_end = records[-1].date
-                distance_input = np.fromiter(
-                    (record.distance for record in records), dtype=np.float32
+                evaluation_data_start = sensor_records[0].date
+                evaluation_data_end = sensor_records[-1].date
+                sensor_dates = [
+                    record.date
+                    for record in sensor_records
+                ]
+
+                # この6000時刻の範囲に存在するDistanceだけを取得する。
+                # 無い時刻は後でNaNにするため、Distance側の件数は発火条件にしない。
+                distance_records = (
+                    await dbsession.execute(
+                        select(
+                            sukusute_server.database_models
+                            .ChildDistanceData
+                        )
+                        .where(
+                            sukusute_server.database_models
+                            .ChildDistanceData.child_id_1 == pair[0],
+                            sukusute_server.database_models
+                            .ChildDistanceData.child_id_2 == pair[1],
+                            sukusute_server.database_models
+                            .ChildDistanceData.date >= evaluation_data_start,
+                            sukusute_server.database_models
+                            .ChildDistanceData.date <= evaluation_data_end
+                        )
+                    )
+                ).scalars().all()
+
+                distance_by_date = {
+                    record.date: record.distance
+                    for record in distance_records
+                }
+
+                # 6000個のSensor timestampに1対1で揃える。
+                # DBに行が無い場合もNaNを入れるので、入力不足は発生しない。
+                distance_input = np.asarray(
+                    [
+                        distance_by_date.get(
+                            sensor_date,
+                            np.nan
+                        )
+                        for sensor_date in sensor_dates
+                    ],
+                    dtype=np.float32
                 )
 
                 distance_result = await run_ml_inference(
-                    sukusute_machine_learning.inference.predict_distance.distance_infer,
+                    sukusute_machine_learning.inference
+                    .predict_distance.distance_infer,
                     distance_input
                 )
 
                 history = (
                     await dbsession.execute(
                         select(
-                            sukusute_server.database_models.ChildDistanceEvaluationHistory.evaluated
+                            sukusute_server.database_models
+                            .ChildDistanceEvaluationHistory.evaluated
                         )
-                        .where(and_(
-                            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_1 == pair[0],
-                            sukusute_server.database_models.ChildDistanceEvaluationHistory.child_id_2 == pair[1],
-                        ))
+                        .where(
+                            and_(
+                                sukusute_server.database_models
+                                .ChildDistanceEvaluationHistory.child_id_1 == pair[0],
+                                sukusute_server.database_models
+                                .ChildDistanceEvaluationHistory.child_id_2 == pair[1],
+                            )
+                        )
                         .order_by(
-                            sukusute_server.database_models.ChildDistanceEvaluationHistory.date.desc()
+                            sukusute_server.database_models
+                            .ChildDistanceEvaluationHistory.date.desc()
                         )
                         .limit(RELATEDNESS_MAX_HISTORY)
                     )
@@ -596,36 +673,59 @@ async def evaluate_distance_data(
 
                 history = list(reversed(history))
 
-                steps_cutoff = evaluation_data_end - datetime.timedelta(minutes=RELATEDNESS_MAX_STEPS_MINUTES)
-                
+                steps_cutoff = (
+                    evaluation_data_end
+                    - datetime.timedelta(
+                        minutes=RELATEDNESS_MAX_STEPS_MINUTES
+                    )
+                )
+
                 data1 = np.asarray((
                     await dbsession.execute(
-                        select(sukusute_server.database_models.SingleChildData.steps)
-                        .where(
-                            sukusute_server.database_models.SingleChildData.child_id == pair[0],
-                            sukusute_server.database_models.SingleChildData.date >= steps_cutoff,
-                            sukusute_server.database_models.SingleChildData.date <= evaluation_data_end,
+                        select(
+                            sukusute_server.database_models
+                            .SingleChildData.steps
                         )
-                        .order_by(sukusute_server.database_models.SingleChildData.date.asc())
+                        .where(
+                            sukusute_server.database_models
+                            .SingleChildData.child_id == pair[0],
+                            sukusute_server.database_models
+                            .SingleChildData.date >= steps_cutoff,
+                            sukusute_server.database_models
+                            .SingleChildData.date <= evaluation_data_end
+                        )
+                        .order_by(
+                            sukusute_server.database_models
+                            .SingleChildData.date.asc()
+                        )
                     )
                 ).scalars().all(), dtype=np.float32)
 
                 data2 = np.asarray((
                     await dbsession.execute(
-                        select(sukusute_server.database_models.SingleChildData.steps)
-                        .where(
-                            sukusute_server.database_models.SingleChildData.child_id == pair[1],
-                            sukusute_server.database_models.SingleChildData.date >= steps_cutoff,
-                            sukusute_server.database_models.SingleChildData.date <= evaluation_data_end,
+                        select(
+                            sukusute_server.database_models.SingleChildData.steps
                         )
-                        .order_by(sukusute_server.database_models.SingleChildData.date.asc())
+                        .where(
+                            sukusute_server.database_models
+                            .SingleChildData.child_id == pair[1],
+                            sukusute_server.database_models
+                            .SingleChildData.date >= steps_cutoff,
+                            sukusute_server.database_models
+                            .SingleChildData.date <= evaluation_data_end
+                        )
+                        .order_by(
+                            sukusute_server.database_models
+                            .SingleChildData.date.asc()
+                        )
                     )
                 ).scalars().all(), dtype=np.float32)
 
                 # 歩数の類似度と過去の相対距離の推論結果を利用する関連度スコア計算
                 if history:
                     relatedness_result = await run_ml_inference(
-                        sukusute_machine_learning.utils.relatedness.calc_relatedness,
+                        sukusute_machine_learning.utils
+                        .relatedness.calc_relatedness,
                         history,
                         data1,
                         data2
@@ -635,11 +735,17 @@ async def evaluate_distance_data(
                     relatedness_result = 0.0
 
                 dbsession.add(
-                    sukusute_server.database_models.ChildDistanceEvaluationHistory(
+                    sukusute_server.database_models
+                    .ChildDistanceEvaluationHistory(
                         child_id_1=pair[0],
                         child_id_2=pair[1],
                         date=evaluation_data_end,
-                        evaluated=sukusute_server.database_models.ChildDistanceEvaluationEnum(distance_result["label"]),
+                        evaluated=(
+                            sukusute_server.database_models
+                            .ChildDistanceEvaluationEnum(
+                                distance_result["label"]
+                            )
+                        ),
                         confidence=distance_result["confidence"],
                         score=relatedness_result
                     )
@@ -647,4 +753,4 @@ async def evaluate_distance_data(
                 await dbsession.commit()
 
                 # commitが正常終了した時点をFreshness用の推論時刻として記録
-                latest_distance_evaluated_at[pair] = datetime.datetime.now()
+                latest_distance_evaluated_at[pair] = (datetime.datetime.now())
