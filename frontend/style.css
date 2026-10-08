@@ -2190,20 +2190,20 @@ body.square-mode.signage-mode .nearest-person {
 /* ===== データが一定時間更新されていない表示 ===== */
 
 .is-stale-value {
-    color: #9a7b86 !important;
+    color: #a8a8a8 !important;
 }
 
 
 /* 歩数 */
 .student-steps.is-stale-value,
 .student-steps.is-stale-value strong {
-    color: #9a7b86 !important;
+    color: #a8a8a8 !important;
 }
 
 
 /* 最も近くにいる人 */
 .nearest-person.is-stale-value {
-    color: #9a7b86 !important;
+    color: #a8a8a8 !important;
 }
 
 
@@ -2211,14 +2211,14 @@ body.square-mode.signage-mode .nearest-person {
 .ml-result-grid.is-stale-value,
 .ml-result-grid.is-stale-value strong,
 .ml-result-grid.is-stale-value small {
-    color: #9a7b86 !important;
+    color: #a8a8a8 !important;
 }
 
 
 /* ベースライン */
 .baseline-grid.is-stale-value,
 .baseline-grid.is-stale-value span {
-    color: #9a7b86 !important;
+    color: #a8a8a8 !important;
 }
 
 
@@ -2229,13 +2229,13 @@ body.square-mode.signage-mode .nearest-person {
 .relation-pair.is-stale-value,
 .relation-pair.is-stale-value strong,
 .relation-pair.is-stale-value span {
-    color: #9a7b86 !important;
+    color: #a8a8a8 !important;
 }
 
 
 /* 更新なし注記 */
 .stale-value-note {
-    color: #9a7b86 !important;
+    color: #a8a8a8 !important;
     font-size: 9px;
     font-weight: 700;
     white-space: nowrap;
