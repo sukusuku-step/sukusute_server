@@ -898,6 +898,7 @@ async def get_today_stats(
     year: int = datetime.datetime.now().year,
     month: int = datetime.datetime.now().month,
     day: int = datetime.datetime.now().day,
+    class_id: int | None = None,
 ) -> http_models.TodayStatsResponse:
     """指定日の全児童歩数、ランキング、時間別集計、警告を返す。"""
     start_date = datetime.datetime(year, month, day, 0, 0, 0)
@@ -977,9 +978,20 @@ async def get_today_stats(
     total_steps = sum(student_steps.values())
 
     # 児童ID一覧を取得
+    children_query = sqlalchemy.select(database_models.Child)
+    if class_id is not None:
+        children_query = children_query.where(
+            database_models.Child.class_id == class_id
+        )
+
     all_children = (await dbsession.execute(
-        sqlalchemy.select(database_models.Child)
+        children_query
     )).scalars().all()
+
+    visible_child_ids = {
+        child.child_id
+        for child in all_children
+    }
 
     num_students = len(all_children)
     logger.info(
@@ -1030,6 +1042,10 @@ async def get_today_stats(
         )).all()
     }
     for child_id_val, (name, steps_val, date_val) in latest_step_records.items():
+        # クラスのプルダウンで非表示になっている児童は警告判定の対象から外す
+        if child_id_val not in visible_child_ids:
+            continue
+
         # この児童の過去7日間の平均を計算
         record_count, total_week_steps = weekly_stats.get(child_id_val, (0, 0))
 

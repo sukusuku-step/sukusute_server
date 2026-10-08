@@ -548,7 +548,7 @@ async function loadDashboard() {
             apiRequest(
                 `/api/stats/today?${dateQuery(
                     state.selectedDate
-                )}`
+                )}${state.selectedClassId ? `&class_id=${encodeURIComponent(state.selectedClassId)}` : ''}`
             ).then((stats) => {
                 state.steps = Object.fromEntries(
                     (stats.student_ranking || []).map(
@@ -1386,17 +1386,13 @@ function renderModelAnomalyWarnings() {
     for (const child of state.children) {
         const childId = Number(child.child_id);
         const childName = escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`));
+        const warnings = [];
+
         const anomaly = state.mlAnomalies[childId];
 
+        // 行動状態の異常検知
         if (anomaly?.warning === true) {
-            items.push(`
-                <li class="model-anomaly-item">
-                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
-                        ${childName}
-                    </button>
-                    <span>⚠ 行動状態</span>
-                </li>
-            `);
+            warnings.push('⚠ 行動状態');
         }
 
         const deviceStatus = state.deviceStatuses[childId];
@@ -1409,14 +1405,7 @@ function renderModelAnomalyWarnings() {
             && Number.isFinite(battery)
             && battery <= 20
         ) {
-            items.push(`
-                <li class="model-anomaly-item">
-                    <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
-                        ${childName}
-                    </button>
-                    <span>⚠ バッテリー</span>
-                </li>
-            `);
+            warnings.push('⚠ バッテリー');
         }
 
         const wifiRssi = Number(deviceStatus?.wifi_rssi);
@@ -1427,12 +1416,16 @@ function renderModelAnomalyWarnings() {
             && Number.isFinite(wifiRssi)
             && getWifiSignalLevel(wifiRssi) <= 1
         ) {
+            warnings.push('⚠ 電波強度');
+        }
+
+        if (warnings.length > 0) {
             items.push(`
                 <li class="model-anomaly-item">
                     <button class="model-anomaly-child-link" type="button" data-anomaly-child="${childId}">
                         ${childName}
                     </button>
-                    <span>⚠ 電波強度</span>
+                    <span>${warnings.join('　')}</span>
                 </li>
             `);
         }
@@ -1448,7 +1441,7 @@ function renderModelAnomalyWarnings() {
 
     document.getElementById('modelAnomalyCount').textContent =
         items.length
-            ? `${items.length}件`
+            ? `${items.length}人`
             : '警告なし';
 
     panel.hidden = false;
