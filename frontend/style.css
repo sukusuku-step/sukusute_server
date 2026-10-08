@@ -1806,8 +1806,11 @@ body.square-mode.signage-mode .nearest-person {
 
 .relation-score-row {
     display: grid;
-    grid-template-columns: minmax(90px, 1.2fr) repeat(3, minmax(72px, auto));
-    gap: 5px;
+    grid-template-columns:
+        minmax(90px, 1.2fr)
+        minmax(130px, 1fr)
+        minmax(85px, auto);
+    gap: 8px;
     align-items: center;
     padding: 5px 6px;
     border: 1px solid #e1d9e5;
@@ -2247,6 +2250,35 @@ body.square-mode.signage-mode .nearest-person {
     color: #7a5f68 !important;
 }
 
+.relation-distance-result span {
+    color: #625969;
+}
+
+.relation-distance-result small {
+    color: #6a606e;
+    font-size: 9px;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.relation-score-row .relation-distance-result {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.relation-pair .relation-distance-result {
+    display: grid;
+    gap: 1px;
+}
+
+.relation-relatedness {
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
 
 /* 更新なし注記 */
 .stale-value-note {

@@ -1077,10 +1077,12 @@ function renderStudents() {
 
                 return `
                     <div class="relation-score-row${staleClass(relationIsStale)}">
-                        <strong>${escapeHtml(wanakana.toHiragana(other.name || `子ども${other.child_id}`))}</strong>
-                        <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
-                        <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
-                        <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
+                        <strong class="relation-child-name">${escapeHtml(wanakana.toHiragana(other.name || `子ども${other.child_id}`))}</strong>
+                        <div class="relation-distance-result">
+                            <span>距離: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
+                            <small>${relation ? `${formatConfidence(relation.confidence)}での推論` : '-'}</small>
+                        </div>
+                        <strong class="relation-relatedness">関連度: ${relation ? formatMlNumber(relation.score) : '-'}</strong>
                     </div>
                 `;
             }).join('');
@@ -1576,18 +1578,12 @@ function renderRelationSummary() {
 
             rows.push(`
                 <div class="relation-pair${staleClass(relationIsStale)}${isHighest ? ' is-highest-relatedness' : ''}">
-                    <strong>
-                        ${escapeHtml(wanakana.toHiragana(child1.name))}↔${escapeHtml(wanakana.toHiragana(child2.name))}
-                    </strong>
-                    <span>
-                        距離状態:${relation ? escapeHtml(relation.evaluated) : '未算出'}
-                    </span>
-                    <span>
-                        信頼度:${relation ? formatConfidence(relation.confidence) : '-'}
-                    </span>
-                    <span>
-                        関連度:${relation ? formatMlNumber(relation.score) : '-'}
-                    </span>
+                    <strong class="relation-pair-name">${escapeHtml(wanakana.toHiragana(child1.name))}↔${escapeHtml(wanakana.toHiragana(child2.name))}</strong>
+                    <div class="relation-distance-result">
+                        <span>距離状態:${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
+                        <small>${relation ? `${formatConfidence(relation.confidence)}での推論` : '-'}</small>
+                    </div>
+                    <strong>関連度:${relation ? formatMlNumber(relation.score) : '-'}</strong>
                 </div>
             `);
         }
