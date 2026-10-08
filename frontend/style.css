@@ -2280,3 +2280,108 @@ body.square-mode.signage-mode .nearest-person {
 .relation-pair.is-highest-relatedness strong {
     color: #b71c1c;
 }
+
+/* ===== 過去の推論履歴 ===== */
+
+.history-modal {
+    width: min(900px, 100%);
+}
+
+.history-child-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.history-child-selector select {
+    min-width: 220px;
+    padding: 7px 9px;
+    border: 1px solid #b99eae;
+    border-radius: 4px;
+    background: #fff;
+    color: var(--ink);
+    font: inherit;
+}
+
+.history-table-wrap {
+    max-height: min(58vh, 520px);
+    overflow: auto;
+    border: 1px solid #d9abad;
+    background: #fff;
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    text-align: left;
+}
+
+.history-table th,
+.history-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #ead4d5;
+    vertical-align: top;
+}
+
+.history-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #fff5f6;
+}
+
+.history-table td strong,
+.history-table td small {
+    display: block;
+}
+
+.history-table td small {
+    margin-top: 2px;
+    color: #7d6d76;
+    font-size: 10px;
+}
+
+.history-row-warning {
+    background: #fff0f0;
+}
+
+.history-row-warning td {
+    border-bottom-color: #efb8b8;
+}
+
+.history-anomaly-result {
+    display: grid;
+    gap: 4px;
+}
+
+.history-anomaly-result.is-warning > strong {
+    color: #b71c1c;
+}
+
+.history-anomaly-result.is-partial > strong {
+    color: #8a6500;
+}
+
+.history-anomaly-items {
+    display: grid;
+    gap: 2px;
+}
+
+.history-anomaly-items span {
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.history-anomaly-clear {
+    color: #60705e;
+    font-weight: 700;
+}
+
+.history-anomaly-unavailable {
+    color: #9a7b86;
+    font-size: 10px;
+}

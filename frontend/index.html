@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>すくすくステップ</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20261009-history1">
 </head>
 <body>
     <!-- 未ログイン時に表示する認証フォーム -->
@@ -94,6 +94,7 @@
         </div>
 
         <button data-action="config" data-menu-tone="lavender">⚙️ 設定</button>
+        <button data-action="history" data-menu-tone="lavender">🕘 過去の分析結果を確認</button>
 
         <button data-action="display-settings" data-menu-tone="lavender" type="button" aria-expanded="false">🖥️ UI変更</button>
         <div id="displayModeMenu" class="menu-submenu is-hidden">
@@ -175,6 +176,40 @@
                 <button class="primary-button" type="submit">設定を保存</button>
                 <div id="configMessage" class="form-message" role="status"></div>
             </form>
+        </section>
+        <section id="historyModal" class="modal-card history-modal is-hidden">
+            <button class="modal-close" data-close-modal type="button" aria-label="過去の分析結果を閉じる">×</button>
+            <h2>過去の分析結果を確認</h2>
+            <p class="modal-caption">各子どもの行動状態・姿勢状態・活動量・異常検知の過去の分析結果を時系列で確認できます。</p>
+            <label class="history-date-selector">
+                <span>日付</span>
+                <input id="historyDateSelector" type="date">
+            </label>
+            <label class="history-child-selector">
+                <span>子ども</span>
+                <select id="historyChildSelector" aria-label="過去データを確認する子ども"></select>
+            </label>
+            <div id="historyMessage" class="form-message" role="status"></div>
+            <div class="history-table-wrap">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">時刻</th>
+                            <th scope="col">姿勢状態</th>
+                            <th scope="col">行動状態</th>
+                            <th scope="col">活動量</th>
+                            <th scope="col">異常検知</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr>
+                            <td colspan="5">
+                                子どもを選択してください。
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </section>
         <section id="studentDetailModal" class="modal-card student-detail-modal is-hidden">
             <button class="modal-close" data-close-modal type="button" aria-label="子どもの詳細を閉じる">×</button>
@@ -258,6 +293,6 @@
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
     <script src="wanakana.min.js"></script>
-    <script src="app.js?v=20261001-date-device-status-fix1"></script>
+    <script src="app.js?v=20261009-history1"></script>
 </body>
 </html>

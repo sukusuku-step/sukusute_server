@@ -176,19 +176,6 @@ def compare_current_with_baseline(
     # ANOMALY_MIN_WARNING_FEATURES種類以上の項目で異常が検出されたら異常とする
     warning = warning_count >= ANOMALY_MIN_WARNING_FEATURES
 
-    relative_diff = abs(current_value - baseline_median) / reference_value
-    feature_warning = relative_diff >= threshold_ratio
-    warning = warning or feature_warning # しきい値のパーセントよりも乖離していたらwarningをtrueにする
-
-    comparisons[feature] = {
-        "current": float(current_value),
-        "baseline_median": baseline_median,
-        "baseline_mad_scale": baseline_mad_scale,
-        "relative_diff": float(relative_diff),
-        "relative_diff_percent": float(relative_diff * 100.0),
-        "warning": bool(feature_warning)
-    }
-
     return {
         "warning": bool(warning),
         "warning_count": warning_count,
@@ -440,12 +427,18 @@ async def evaluate_data(dbsession: sukusute_server.database_models.SessionDep,
                 sukusute_server.database_models.ChildBehaviorDataEvaluationHistory(
                     child_id=child_id,
                     date=evaluation_data_end,
+                    
                     behavior_acce=sukusute_server.database_models.ChildBehaviorAcceEnum(behavior_result["acce_label"]),
                     behavior_acce_confidence=behavior_result["acce_confidence"],
                     behavior_pedo=sukusute_server.database_models.ChildBehaviorPedoEnum(behavior_result["pedo_label"]),
                     behavior_pedo_confidence=behavior_result["pedo_confidence"],
                     activity=activity_result["activity_level"],
                     activity_confidence=activity_result["activity_confidence"],
+
+                    anomaly_warning=(anomaly_result["warning"] if anomaly_result is not None else None),
+                    anomaly_warning_count=(anomaly_result["warning_count"] if anomaly_result is not None else None),
+                    anomaly_result=anomaly_result,
+
                     baseline_steps_10min_median=baseline_result["steps_10min"]["median"] if baseline_result else None,
                     baseline_steps_10min_mad_scale=baseline_result["steps_10min"]["mad_scale"] if baseline_result else None,
                     baseline_activity_mean_proxy_median=baseline_result["activity_mean_proxy"]["median"] if baseline_result else None,

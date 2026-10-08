@@ -226,6 +226,7 @@ class ChildBehaviorDataEvaluationHistory(Base):
         ForeignKey("child.child_id"),
         primary_key=True
     )
+    
     date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
     behavior_acce: Mapped[ChildBehaviorAcceEnum]
     behavior_acce_confidence: Mapped[float]
@@ -233,6 +234,10 @@ class ChildBehaviorDataEvaluationHistory(Base):
     behavior_pedo_confidence: Mapped[float]
     activity: Mapped[int]
     activity_confidence: Mapped[float]
+
+    anomaly_warning: Mapped[typing.Optional[bool]] = mapped_column(nullable=True)
+    anomaly_warning_count: Mapped[typing.Optional[int]] = mapped_column(nullable=True)
+    anomaly_result: Mapped[typing.Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     baseline_steps_10min_median: Mapped[typing.Optional[float]]
     baseline_steps_10min_mad_scale: Mapped[typing.Optional[float]]

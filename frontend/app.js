@@ -1611,6 +1611,223 @@ async function openRelationModal() {
     }
 }
 
+function formatHistoryDate(value) {
+    if (!value) return '-';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return date.toLocaleString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+function renderHistoryAnomaly(record) {
+    const result = record.anomaly_result;
+
+    // migration以前など、異常結果が保存されていない履歴
+    if (!result) {
+        return `
+            <span class="history-anomaly-unavailable">
+                異常判定履歴なし
+            </span>
+        `;
+    }
+
+    const warnings = Object.entries(
+        result.comparisons || {}
+    ).filter(
+        ([, comparison]) =>
+            comparison?.warning === true
+    );
+
+    if (!warnings.length) {
+        return `
+            <span class="history-anomaly-clear">
+                異常なし
+            </span>
+        `;
+    }
+
+    const overallWarning = record.anomaly_warning === true;
+
+    return `
+        <div class="history-anomaly-result ${
+            overallWarning
+                ? 'is-warning'
+                : 'is-partial'
+        }">
+
+            <strong>
+                ${
+                    overallWarning
+                        ? `⚠ 異常検知（${warnings.length}項目）`
+                        : `${warnings.length}項目がしきい値を超過（全体判定は正常）`
+                }
+            </strong>
+
+            <div class="history-anomaly-items">
+                ${warnings.map(
+                    ([feature, comparison]) => `
+                        <span>
+                            ${escapeHtml(
+                                formatAnomalyChange(
+                                    feature,
+                                    comparison
+                                )
+                            )}
+                        </span>
+                    `
+                ).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderBehaviorHistory(records) {
+    const body = document.getElementById('historyTableBody');
+
+    if (!records.length) {
+        body.innerHTML = `
+            <tr>
+                <td colspan="5">
+                    推論履歴がありません。
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    body.innerHTML = records.map((record) => `
+        <tr class="${
+            record.anomaly_warning === true
+                ? 'history-row-warning'
+                : ''
+        }">
+
+            <td>
+                ${escapeHtml(
+                    formatHistoryDate(record.date)
+                )}
+            </td>
+
+            <td>
+                <strong>
+                    ${escapeHtml(
+                        record.behavior_acce ?? '-'
+                    )}
+                </strong>
+
+                <small>
+                    ${formatConfidence(
+                        record.behavior_acce_confidence
+                    )}
+                </small>
+            </td>
+
+            <td>
+                <strong>
+                    ${escapeHtml(
+                        record.behavior_pedo ?? '-'
+                    )}
+                </strong>
+
+                <small>
+                    ${formatConfidence(
+                        record.behavior_pedo_confidence
+                    )}
+                </small>
+            </td>
+
+            <td>
+                <strong>
+                    ${
+                        record.activity_level ?? '-'
+                    }${
+                        record.activity_level === null
+                        || record.activity_level === undefined
+                            ? ''
+                            : ' / 5'
+                    }
+                </strong>
+
+                <small>
+                    ${formatConfidence(
+                        record.activity_confidence
+                    )}
+                </small>
+            </td>
+
+            <td>
+                ${renderHistoryAnomaly(record)}
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function loadBehaviorHistory(childId) {
+    const selectedDate = document.getElementById('historyDateSelector').value;
+
+    if (!childId || !selectedDate) {
+        return;
+    }
+
+    const [year, month, day] = selectedDate.split('-');
+
+    const result = await apiRequest(
+        `/api/ml/behavior/history/${
+            encodeURIComponent(childId)
+        }?year=${year}&month=${month}&day=${day}`
+    );
+
+    renderBehaviorHistory(result.records || []);
+}
+
+async function openHistoryModal() {
+    const selector = document.getElementById('historyChildSelector');
+    const dateSelector = document.getElementById('historyDateSelector');
+
+    // メイン画面で選択中の日付を初期値にする
+    dateSelector.value = formatDate(state.selectedDate || new Date());
+
+    selector.innerHTML =
+        state.children.length
+            ? state.children.map((child) => `
+                <option value="${child.child_id}">
+                    ${escapeHtml(
+                        wanakana.toHiragana(
+                            child.name
+                            || `子ども${child.child_id}`
+                        )
+                    )}
+                </option>
+            `).join('')
+            : `
+                <option value="">
+                    児童がいません
+                </option>
+            `;
+
+    openModal('historyModal');
+
+    if (state.children.length) {
+        selector.value = String(state.children[0].child_id);
+
+        await loadBehaviorHistory(selector.value);
+    } else {
+        await loadBehaviorHistory('');
+    }
+}
+
 function shortenNetworkName(name, maxLength = 7) {
     const chars = [...String(name || '')];
 
@@ -2188,6 +2405,10 @@ document.querySelector('[data-action="class"]').addEventListener('click', () => 
 document.querySelector('[data-action="student-manage"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openStudentManageModal(); });
 document.querySelector('[data-action="relation"]').addEventListener('click', () => { document.getElementById('menuPanel').classList.remove('is-open'); openRelationModal(); });
 document.querySelector('[data-action="related-network"]').addEventListener('click', () => { closeMenu(); openRelatedNetworkModal(); });
+
+document.querySelector('[data-action="history"]').addEventListener('click', () => { closeMenu(); openHistoryModal(); });
+document.getElementById('historyChildSelector').addEventListener('change', (event) => { loadBehaviorHistory(event.currentTarget.value); });
+document.getElementById('historyDateSelector').addEventListener('change', () => { const childId = document.getElementById('historyChildSelector').value; loadBehaviorHistory(childId); });
 
 document.querySelector('[data-action="refresh"]').addEventListener('click', () => {
     document.getElementById('menuPanel').classList.remove('is-open');

@@ -1792,15 +1792,96 @@ async def get_ml_behavior_result(
         "baseline_mag_mean_mad_scale": record.baseline_mag_mean_mad_scale
     }
 
-@app.get("/api/ml/anomaly/{child_id}", tags=["API"])
-async def get_ml_anomaly_result(child_id: int):
-    """ 単独児童に関する最新のベースライン異常判定結果を返却する。 """
-    result = ml.latest_anomaly_results.get(child_id)
-    if not result:
-        raise fastapi.exceptions.HTTPException(404, "Anomaly result not found.")
+@app.get("/api/ml/behavior/history/{child_id}", tags=["API"])
+async def get_ml_behavior_history(
+        dbsession: database_models.SessionDep,
+        child_id: int,
+        year: int,
+        month: int,
+        day: int):
+
+    start_date = datetime.datetime(year, month, day)
+    end_date = start_date + datetime.timedelta(days=1)
+
+    records = (
+        await dbsession.scalars(
+            sqlalchemy.select(database_models.ChildBehaviorDataEvaluationHistory)
+            .where(
+                database_models.ChildBehaviorDataEvaluationHistory.child_id == child_id,
+                database_models.ChildBehaviorDataEvaluationHistory.date >= start_date,
+                database_models.ChildBehaviorDataEvaluationHistory.date < end_date
+            )
+            .order_by(database_models.ChildBehaviorDataEvaluationHistory.date)
+        )
+    ).all()
+
     return {
         "status": "ok",
-        **result
+        "child_id": child_id,
+        "date": start_date.date(),
+        "records": [
+            {
+                "date": record.date,
+                "behavior_acce": record.behavior_acce,
+                "behavior_acce_confidence": record.behavior_acce_confidence,
+                "behavior_pedo": record.behavior_pedo,
+                "behavior_pedo_confidence": record.behavior_pedo_confidence,
+                "activity_level": record.activity,
+                "activity_confidence": record.activity_confidence,
+                "anomaly_warning": record.anomaly_warning,
+                "anomaly_warning_count": record.anomaly_warning_count,
+                "anomaly_result": record.anomaly_result
+            }
+            for record in records
+        ]
+    }
+
+@app.get("/api/ml/anomaly/{child_id}", tags=["API"])
+async def get_ml_anomaly_result(
+    dbsession: database_models.SessionDep,
+    child_id: int
+):
+    """最新の異常判定結果を返す。"""
+    # 起動後に新しい推論があればメモリ値を優先
+    result = ml.latest_anomaly_results.get(child_id)
+
+    if result is not None:
+        return {
+            "status": "ok",
+            **result
+        }
+
+    # サーバ再起動後はDBの最新推論結果から復元
+    record = await dbsession.scalar(
+        sqlalchemy.select(
+            database_models
+            .ChildBehaviorDataEvaluationHistory
+        )
+        .where(
+            database_models
+            .ChildBehaviorDataEvaluationHistory
+            .child_id == child_id
+        )
+        .order_by(
+            sqlalchemy.desc(
+                database_models
+                .ChildBehaviorDataEvaluationHistory
+                .date
+            )
+        )
+        .limit(1)
+    )
+
+    if (record is None or record.anomaly_result is None):
+        raise fastapi.HTTPException(
+            404,
+            "Anomaly result not found."
+        )
+
+    return {
+        "status": "ok",
+        "date": record.date.isoformat(),
+        **record.anomaly_result
     }
 
 @app.get("/api/ml/relation", tags=["API"])
