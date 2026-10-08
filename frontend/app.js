@@ -1378,15 +1378,18 @@ function renderRanking() {
     });
 }
 
+const alreadyWarned = [];
 function renderModelAnomalyWarnings() {
     const panel = document.getElementById('modelAnomalyPanel');
     const list = document.getElementById('modelAnomalyList');
     const items = [];
+    let warned = false;
 
     for (const child of state.children) {
         const childId = Number(child.child_id);
         const childName = escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`));
         const anomaly = state.mlAnomalies[childId];
+        let childWarned = false;
 
         if (anomaly?.warning === true) {
             items.push(`
@@ -1397,6 +1400,7 @@ function renderModelAnomalyWarnings() {
                     <span>⚠ 行動状態</span>
                 </li>
             `);
+            childWarned = true;
         }
 
         const deviceStatus = state.deviceStatuses[childId];
@@ -1417,6 +1421,7 @@ function renderModelAnomalyWarnings() {
                     <span>⚠ バッテリー</span>
                 </li>
             `);
+            childWarned = true;
         }
 
         const wifiRssi = Number(deviceStatus?.wifi_rssi);
@@ -1435,6 +1440,10 @@ function renderModelAnomalyWarnings() {
                     <span>⚠ 電波強度</span>
                 </li>
             `);
+            childWarned = true;
+        }
+        if (childWarned && !alreadyWarned.includes(childId)) {
+            warned = true;
         }
     }
 
@@ -1457,6 +1466,13 @@ function renderModelAnomalyWarnings() {
         'is-clear',
         items.length === 0
     );
+
+    if (warned) {
+        dialog = document.getElementById("popupDialog");
+        dialog.show();
+        setTimeout(() => {dialog.close();}, 3000)
+    }
+
 }
 
 // 警告を児童IDごとに最新1件へ絞り、現在のクラスの警告だけを表示する。
