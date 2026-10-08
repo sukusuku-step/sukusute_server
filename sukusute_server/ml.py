@@ -590,10 +590,41 @@ async def evaluate_distance_data(
                     )
                 ).scalars().all()
 
+                history = list(reversed(history))
+
+                steps_cutoff = evaluation_data_end - datetime.timedelta(minutes=RELATEDNESS_MAX_STEPS_MINUTES)
+                
+                data1 = np.asarray((
+                    await dbsession.execute(
+                        select(sukusute_server.database_models.SingleChildData.steps)
+                        .where(
+                            sukusute_server.database_models.SingleChildData.child_id == pair[0],
+                            sukusute_server.database_models.SingleChildData.date >= steps_cutoff,
+                            sukusute_server.database_models.SingleChildData.date <= evaluation_data_end,
+                        )
+                        .order_by(sukusute_server.database_models.SingleChildData.date.asc())
+                    )
+                ).scalars().all(), dtype=np.float32)
+
+                data2 = np.asarray((
+                    await dbsession.execute(
+                        select(sukusute_server.database_models.SingleChildData.steps)
+                        .where(
+                            sukusute_server.database_models.SingleChildData.child_id == pair[1],
+                            sukusute_server.database_models.SingleChildData.date >= steps_cutoff,
+                            sukusute_server.database_models.SingleChildData.date <= evaluation_data_end,
+                        )
+                        .order_by(sukusute_server.database_models.SingleChildData.date.asc())
+                    )
+                ).scalars().all(), dtype=np.float32)
+
+                # 歩数の類似度と過去の相対距離の推論結果を利用する関連度スコア計算
                 if history:
                     relatedness_result = await run_ml_inference(
                         sukusute_machine_learning.utils.relatedness.calc_relatedness,
-                        history
+                        history,
+                        data1,
+                        data2
                     )
                 else:
                     # 初回は過去履歴が存在しないので関連度は初期値を入れておく
