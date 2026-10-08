@@ -941,7 +941,12 @@ function renderStudents() {
 
         card.dataset.palette = String((child.child_id - 1) % 8);
         card.classList.toggle('has-telemetry', Boolean(currentDeviceStatus));
-        card.classList.toggle('has-model-warning', state.mlAnomalies[child.child_id]?.warning === true);
+
+        card.classList.toggle(
+            'has-model-warning',
+            !isTeacher && state.mlAnomalies[child.child_id]?.warning === true
+        );
+
         card.querySelector('.student-name').innerHTML = nameHtml;
 
         const childIsStale = staleChildIds.has(child.child_id);
@@ -1402,6 +1407,12 @@ function renderModelAnomalyWarnings() {
 
     for (const child of state.children) {
         const childId = Number(child.child_id);
+
+        // 先生用として設定されている端末は異常検知の対象外
+        if (isTeacherFlag(childId)) {
+            continue;
+        }
+
         const childName = escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`));
         const warnings = [];
 
@@ -1695,23 +1706,40 @@ function renderRelatedNetwork() {
         }
     }
 
-    const nodeHtml = nodes.map((node) => `
-        <g class="network-node">
-            <circle
-                cx="${node.x}"
-                cy="${node.y}"
-                r="34">
-            </circle>
+    const nodeHtml = nodes.map((node) => {
+        const isTeacher = isTeacherFlag(Number(node.child_id));
+        const displayName = shortenNetworkName(wanakana.toHiragana(node.name));
 
-            <text
-                x="${node.x}"
-                y="${node.y}"
-                text-anchor="middle"
-                dominant-baseline="middle">
-                ${escapeHtml(wanakana.toHiragana(node.name))}
-            </text>
-        </g>
-    `).join('');
+        return `
+            <g class="network-node${isTeacher ? ' is-teacher' : ''}">
+                <circle
+                    cx="${node.x}"
+                    cy="${node.y}"
+                    r="${nodeRadius}">
+                </circle>
+
+                <text
+                    x="${node.x}"
+                    y="${node.y}"
+                    text-anchor="middle"
+                    dominant-baseline="middle"
+                    style="font-size: ${nodeFontSize}px">
+                    ${escapeHtml(displayName)}
+                </text>
+
+                ${isTeacher ? `
+                    <text
+                        class="network-teacher-mark"
+                        x="${node.x + nodeRadius - 4}"
+                        y="${node.y - nodeRadius + 4}"
+                        text-anchor="middle"
+                        dominant-baseline="middle">
+                        🧑‍🏫
+                    </text>
+                ` : ''}
+            </g>
+        `;
+    }).join('');
 
     container.innerHTML = `
         <svg

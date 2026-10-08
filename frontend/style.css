@@ -2260,3 +2260,13 @@ body.square-mode.signage-mode .nearest-person {
 .menu-panel > .menu-submenu.is-hidden + button:not(.close-menu) {
     margin-top: 5px;
 }
+
+.network-teacher-mark {
+    font-size: 18px;
+    pointer-events: none;
+}
+
+.network-node.is-teacher circle {
+    fill: #ffe4a3;
+    stroke: #7a4a13;
+}
