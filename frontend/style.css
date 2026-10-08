@@ -2249,3 +2249,11 @@ body.square-mode.signage-mode .nearest-person {
     cursor: pointer;
     font-weight: 700;
 }
+
+#displayModeMenu {
+    margin-bottom: 8px;
+}
+
+.menu-panel > .menu-submenu.is-hidden + button:not(.close-menu) {
+    margin-top: 5px;
+}
