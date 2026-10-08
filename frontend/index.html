@@ -106,7 +106,7 @@
         <button data-action="related-network" data-menu-tone="blue">🕸️ 関係ネットワーク図を見る</button>
         <button data-action="relation" data-menu-tone="green">📊 相関関係を一覧で見る</button>
         <button data-action="class" data-menu-tone="yellow">🏫 所属クラスの管理</button>
-        <button data-action="student-manage" data-menu-tone="pink">👧 子どもの管理</button>
+        <button data-action="student-manage" data-menu-tone="pink">👧 ユーザーの管理</button>
         <button data-action="refresh" data-menu-tone="mint">🔄 ステータスの更新</button>
         <button data-action="account-delete" data-menu-tone="peach">🗑️ アカウントを削除</button>
         <button data-action="logout" data-menu-tone="rose">🚪 ログアウト</button>
@@ -258,12 +258,12 @@
             </div>
         </section>
         <section id="studentManageModal" class="modal-card student-manage-modal is-hidden">
-            <button class="modal-close" data-close-modal type="button" aria-label="子ども管理を閉じる">×</button>
-            <h2>子どもの管理</h2>
-            <p class="modal-caption">所属クラスと先生用端末の設定を変更できます。</p>
+            <button class="modal-close" data-close-modal type="button" aria-label="ユーザーの管理を閉じる">×</button>
+            <h2>ユーザーの管理</h2>
+            <p class="modal-caption">各子どもの所属クラスと先生用端末の設定を管理できます。</p>
             <div class="student-manage-toolbar">
                 <span id="studentManageCount" class="table-count">0人</span>
-                <button id="openStudentDeleteModalButton" class="danger-button" type="button">子どもを削除</button>
+                <button id="openStudentDeleteModalButton" class="danger-button" type="button">ユーザーを削除</button>
             </div>
             <div id="studentManageMessage" class="form-message" role="status"></div>
             <div class="student-table-wrap">
@@ -274,9 +274,9 @@
             </div>
         </section>
         <section id="studentDeleteModal" class="modal-card student-delete-modal is-hidden">
-            <button class="modal-close" data-close-modal type="button" aria-label="子どもの削除を閉じる">×</button>
-            <h2>子どもの削除</h2>
-            <p class="modal-caption delete-warning">選択した子どもと、歩数・距離・推論履歴を削除します。この操作は取り消せません。</p>
+            <button class="modal-close" data-close-modal type="button" aria-label="ユーザーの削除を閉じる">×</button>
+            <h2>ユーザーの削除</h2>
+            <p class="modal-caption delete-warning">選択したユーザーと、歩数・距離・推論履歴を削除します。この操作は取り消せません。</p>
             <div id="studentDeleteMessage" class="form-message" role="alert"></div>
             <div class="delete-selection-toolbar">
                 <label><input id="selectAllStudentDelete" type="checkbox">すべて選択</label>
@@ -288,7 +288,7 @@
                     <tbody id="studentDeleteList"></tbody>
                 </table>
             </div>
-            <button id="deleteSelectedChildrenButton" class="danger-button" type="button" disabled>選択した子どもを削除</button>
+            <button id="deleteSelectedChildrenButton" class="danger-button" type="button" disabled>選択したユーザーを削除</button>
         </section>
     </div>
     <!-- 更新後のスクリプトを読み込み、古いブラウザーキャッシュを避ける。 -->
