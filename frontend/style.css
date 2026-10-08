@@ -2031,19 +2031,22 @@ body.square-mode.signage-mode .nearest-person {
     .network-layout {
         grid-template-columns: 1fr;
     }
-
     .related-network-graph,
     .network-svg {
         min-height: 500px;
     }
 }
 
-.network-legend {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 8px 0;
-    font-size: 11px;
+.network-legend-gradient {
+    width: 180px;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(
+        to right,
+        #c9baba 0%,
+        #d49b00 50%,
+        #b71c1c 100%
+    );
 }
 
 .legend-edge {

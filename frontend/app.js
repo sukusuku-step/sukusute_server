@@ -1832,12 +1832,29 @@ async function openRelatedNetworkModal() {
 function relationEdgeColor(score) {
     const value = Math.max(0, Math.min(1, Number(score)));
 
-    if (value >= 0.8) return '#b71c1c';
-    if (value >= 0.6) return '#e65100';
-    if (value >= 0.4) return '#d49b00';
-    if (value >= 0.2) return '#9a7777';
+    const low = { r: 201, g: 186, b: 186 };   // #c9baba
+    const mid = { r: 212, g: 155, b: 0 };     // #d49b00
+    const high = { r: 183, g: 28, b: 28 };    // #b71c1c
 
-    return '#c9baba';
+    let from;
+    let to;
+    let t;
+
+    if (value <= 0.5) {
+        from = low;
+        to = mid;
+        t = value / 0.5;
+    } else {
+        from = mid;
+        to = high;
+        t = (value - 0.5) / 0.5;
+    }
+
+    const r = Math.round(from.r + (to.r - from.r) * t);
+    const g = Math.round(from.g + (to.g - from.g) * t);
+    const b = Math.round(from.b + (to.b - from.b) * t);
+
+    return `rgb(${r}, ${g}, ${b})`;
 }
 
 // 生徒管理情報を取得してから、生徒管理モーダルを開く。
