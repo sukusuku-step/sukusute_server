@@ -2043,7 +2043,7 @@ body.square-mode.signage-mode .nearest-person {
 .network-legend {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 7px;
     margin-top: 10px;
     color: #625969;
@@ -2208,20 +2208,20 @@ body.square-mode.signage-mode .nearest-person {
 /* ===== データが一定時間更新されていない表示 ===== */
 
 .is-stale-value {
-    color: #7a5f68 !important;
+    color: #b35a00 !important;
 }
 
 
 /* 歩数 */
 .student-steps.is-stale-value,
 .student-steps.is-stale-value strong {
-    color: #7a5f68 !important;
+    color: #b35a00 !important;
 }
 
 
 /* 最も近くにいる人 */
 .nearest-person.is-stale-value {
-    color: #7a5f68 !important;
+    color: #b35a00 !important;
 }
 
 
@@ -2229,14 +2229,14 @@ body.square-mode.signage-mode .nearest-person {
 .ml-result-grid.is-stale-value,
 .ml-result-grid.is-stale-value strong,
 .ml-result-grid.is-stale-value small {
-    color: #7a5f68 !important;
+    color: #b35a00 !important;
 }
 
 
 /* ベースライン */
 .baseline-grid.is-stale-value,
 .baseline-grid.is-stale-value span {
-    color: #7a5f68 !important;
+    color: #b35a00 !important;
 }
 
 
@@ -2247,7 +2247,12 @@ body.square-mode.signage-mode .nearest-person {
 .relation-pair.is-stale-value,
 .relation-pair.is-stale-value strong,
 .relation-pair.is-stale-value span {
-    color: #7a5f68 !important;
+    color: #b35a00 !important;
+}
+
+.relation-distance-result {
+    display: grid;
+    gap: 1px;
 }
 
 .relation-distance-result span {
@@ -2261,18 +2266,6 @@ body.square-mode.signage-mode .nearest-person {
     font-variant-numeric: tabular-nums;
 }
 
-.relation-score-row .relation-distance-result {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-
-.relation-pair .relation-distance-result {
-    display: grid;
-    gap: 1px;
-}
-
 .relation-relatedness {
     color: var(--ink);
     font-size: 12px;
@@ -2282,7 +2275,7 @@ body.square-mode.signage-mode .nearest-person {
 
 /* 更新なし注記 */
 .stale-value-note {
-    color: #7a5f68 !important;
+    color: #b35a00 !important;
     font-size: 9px;
     font-weight: 700;
     white-space: nowrap;
