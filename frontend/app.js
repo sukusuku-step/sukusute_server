@@ -1719,10 +1719,8 @@ function renderRelatedNetwork() {
             viewBox="0 0 ${width} ${height}"
             role="img"
             aria-label="子ども同士の関係ネットワーク図">
-
             ${edges}
             ${nodeHtml}
-
         </svg>
     `;
 
@@ -1734,9 +1732,7 @@ function renderRelatedNetwork() {
     container
         .querySelectorAll('[data-network-edge]')
         .forEach((edge) => {
-
             edge.addEventListener('click', () => {
-
                 container
                     .querySelectorAll('[data-network-edge]')
                     .forEach((other) => {
@@ -1749,17 +1745,12 @@ function renderRelatedNetwork() {
 
                 detail.innerHTML = `
                     <strong>
-                        ${escapeHtml(edge.dataset.name1)}
-                        ↔
-                        ${escapeHtml(edge.dataset.name2)}
+                        ${escapeHtml(wanakana.toHiragana(edge.dataset.name1))}↔${escapeHtml(wanakana.toHiragana(edge.dataset.name2))}
                     </strong>
-
                     <span>関連度スコア</span>
-
                     <span class="network-edge-score">
                         ${formatMlNumber(score, 3)}
                     </span>
-
                     <span>0から1までの値です。1に近いほど関連度が高いと推定されます。</span>
                 `;
             });
