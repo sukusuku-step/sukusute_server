@@ -34,6 +34,74 @@ CALORIES_PER_STEP = 0.008
 DAILY_STEP_GOAL = 10000
 STEP_WARNING_RATIO = 0.5
 
+async def load_ml_settings(dbsession: database_models.SessionDep) -> dict:
+    """settingsテーブルからML設定を読み込み、無ければ現在のデフォルト値で作成する。"""
+    settings = await dbsession.scalar(
+        sqlalchemy.select(database_models.Settings).limit(1)
+    )
+
+    if settings is None:
+        config = ml.get_ml_config()
+
+        settings = database_models.Settings(
+            activity_max_data_minutes=config["activity_max_data_minutes"],
+            anomaly_threshold_ratio=config["anomaly_threshold_ratio"],
+            baseline_min_data_minutes=config["baseline_min_data_minutes"],
+            baseline_max_days=config["baseline_max_days"],
+            relatedness_max_history=config["relatedness_max_history"],
+            relatedness_max_steps_minutes=config["relatedness_max_steps_minutes"],
+        )
+
+        dbsession.add(settings)
+        await dbsession.commit()
+        await dbsession.refresh(settings)
+
+    return ml.update_ml_config(
+        activity_max_data_minutes=settings.activity_max_data_minutes,
+        anomaly_threshold_ratio=settings.anomaly_threshold_ratio,
+        baseline_min_data_minutes=settings.baseline_min_data_minutes,
+        baseline_max_days=settings.baseline_max_days,
+        relatedness_max_history=settings.relatedness_max_history,
+        relatedness_max_steps_minutes=settings.relatedness_max_steps_minutes,
+    )
+
+async def save_ml_settings(
+    dbsession: database_models.SessionDep,
+    *,
+    activity_max_data_minutes: int,
+    anomaly_threshold_ratio: float,
+    baseline_min_data_minutes: int,
+    baseline_max_days: int,
+    relatedness_max_history: int,
+    relatedness_max_steps_minutes: int,
+) -> dict:
+    """6個のML設定値をsettingsテーブルへ保存し、実行中のML設定にも反映する。"""
+    settings = await dbsession.scalar(
+        sqlalchemy.select(database_models.Settings).limit(1)
+    )
+
+    if settings is None:
+        settings = database_models.Settings()
+        dbsession.add(settings)
+
+    settings.activity_max_data_minutes = activity_max_data_minutes
+    settings.anomaly_threshold_ratio = anomaly_threshold_ratio
+    settings.baseline_min_data_minutes = baseline_min_data_minutes
+    settings.baseline_max_days = baseline_max_days
+    settings.relatedness_max_history = relatedness_max_history
+    settings.relatedness_max_steps_minutes = relatedness_max_steps_minutes
+
+    await dbsession.commit()
+
+    return ml.update_ml_config(
+        activity_max_data_minutes=activity_max_data_minutes,
+        anomaly_threshold_ratio=anomaly_threshold_ratio,
+        baseline_min_data_minutes=baseline_min_data_minutes,
+        baseline_max_days=baseline_max_days,
+        relatedness_max_history=relatedness_max_history,
+        relatedness_max_steps_minutes=relatedness_max_steps_minutes,
+    )
+
 async def notifier():
     already_warned: set[int] = set()
     while True:
@@ -57,6 +125,11 @@ async def notifier():
 
 @contextlib.asynccontextmanager
 async def lifespan(_):
+    await asyncio.to_thread(migrate_database)
+
+    async with database_models.AsyncSession(database_models.engine) as dbsession:
+        await load_ml_settings(dbsession)
+
     asyncio.create_task(notifier())
     yield
 
@@ -1461,12 +1534,14 @@ class MLConfigUpdate(pydantic.BaseModel):
     baseline_min_data_minutes: int
     baseline_max_days: int
     relatedness_max_history: int
+    relatedness_max_steps_minutes: int | None = None
 
 @app.get("/api/ml/config", tags=["API"])
 async def get_ml_config(
     teacher: TeacherDep,
+    dbsession: database_models.SessionDep,
 ):
-    config = ml.get_ml_config()
+    config = await load_ml_settings(dbsession)
 
     return {
         "status": "ok",
@@ -1480,54 +1555,75 @@ async def get_ml_config(
             config["baseline_max_days"],
         "relatedness_max_history":
             config["relatedness_max_history"],
+        "relatedness_max_steps_minutes":
+            config["relatedness_max_steps_minutes"],
     }
-
 
 @app.patch("/api/ml/config", tags=["API"])
 async def update_ml_config(
     data: MLConfigUpdate,
     teacher: TeacherDep,
+    dbsession: database_models.SessionDep
 ):
-    if data.activity_max_data_minutes < 1:
+    if data.activity_max_data_minutes < 5:
         raise fastapi.HTTPException(
             422,
-            "活動量推論に使用する過去データ時間が不正です"
+            "活動量推論に使用する過去データは5分以上にしてください"
         )
     
     if not 0 < data.anomaly_threshold_percent <= 1000:
         raise fastapi.HTTPException(
             422,
-            "異常検知しきい値が不正です"
+            "異常検知のしきい値の範囲が不正です"
         )
 
     if data.baseline_min_data_minutes < 0:
         raise fastapi.HTTPException(
             422,
-            "最低蓄積時間が不正です"
+            "ベースライン算出用の過去蓄積時間の最低値が不正です"
         )
 
     if data.baseline_max_days < 1:
         raise fastapi.HTTPException(
             422,
-            "最大過去日数は1日以上にしてください"
+            "ベースライン算出用の最大過去日数は1日以上にしてください"
         )
 
     if data.relatedness_max_history < 1:
         raise fastapi.HTTPException(
             422,
-            "関連度履歴件数は1件以上にしてください"
+            "関連度スコア計算に使用する履歴件数は1件以上にしてください"
         )
 
-    config = ml.update_ml_config(
+    current_config = await load_ml_settings(dbsession)
+
+    relatedness_max_steps_minutes = (
+        data.relatedness_max_steps_minutes
+        if data.relatedness_max_steps_minutes is not None
+        else current_config["relatedness_max_steps_minutes"]
+    )
+
+    if relatedness_max_steps_minutes < 5:
+        raise fastapi.HTTPException(
+            422,
+            "関連度スコア計算に使用する過去の歩数データは5分以上にしてください"
+        )
+
+    # 設定値はDBに保存しておく
+    config = await save_ml_settings(
+        dbsession,
         activity_max_data_minutes=data.activity_max_data_minutes,
         anomaly_threshold_ratio=data.anomaly_threshold_percent / 100.0,
         baseline_min_data_minutes=data.baseline_min_data_minutes,
         baseline_max_days=data.baseline_max_days,
-        relatedness_max_history=data.relatedness_max_history
+        relatedness_max_history=data.relatedness_max_history,
+        relatedness_max_steps_minutes=relatedness_max_steps_minutes,
     )
 
     return {
         "status": "ok",
+        "activity_max_data_minutes":
+            config["activity_max_data_minutes"],
         "anomaly_threshold_percent":
             config["anomaly_threshold_ratio"] * 100.0,
         "baseline_min_data_minutes":
@@ -1536,6 +1632,8 @@ async def update_ml_config(
             config["baseline_max_days"],
         "relatedness_max_history":
             config["relatedness_max_history"],
+        "relatedness_max_steps_minutes":
+            config["relatedness_max_steps_minutes"],
     }
 
 # ===== ML推論結果API =====

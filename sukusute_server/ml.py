@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # ===== フロントエンドのコンフィグから変更可能なML設定 =====
 
-# サーバを再起動すると以下のデフォルト値に戻る
+# settingsテーブルに設定が無い場合は以下のデフォルト値を使用する
 
 # activity_inferへ渡す過去データ量の上限（単位: 分）
 ACTIVITY_MAX_DATA_MINUTES = 60
@@ -33,8 +33,8 @@ BASELINE_MAX_DAYS = 14
 # calc_relatednessへ渡す過去の相対距離の推論結果の最大件数
 RELATEDNESS_MAX_HISTORY = 100
 
-# calc_relatednessへ渡すデータは最大で過去何日分までか
-RELATEDNESS_MAX_STEPS_MINUTES = 14
+# calc_relatednessへ渡す類似度比較用の歩数データは最大で過去何分までを使うか
+RELATEDNESS_MAX_STEPS_MINUTES = 180
 
 # BEHAVIOR_SESSION_GAP_MINUTES以上時間が空いたらセッション境界を更新する
 ML_SESSION_GAP_MINUTES = 30
@@ -69,7 +69,8 @@ def get_ml_config() -> dict:
         "anomaly_threshold_ratio": ANOMALY_THRESHOLD_RATIO,
         "baseline_min_data_minutes": BASELINE_MIN_DATA_MINUTES,
         "baseline_max_days": BASELINE_MAX_DAYS,
-        "relatedness_max_history": RELATEDNESS_MAX_HISTORY
+        "relatedness_max_history": RELATEDNESS_MAX_HISTORY,
+        "relatedness_max_steps_minutes": RELATEDNESS_MAX_STEPS_MINUTES
     }
 
 def update_ml_config(
@@ -77,19 +78,22 @@ def update_ml_config(
     anomaly_threshold_ratio: float,
     baseline_min_data_minutes: int,
     baseline_max_days: int,
-    relatedness_max_history: int
+    relatedness_max_history: int,
+    relatedness_max_steps_minutes: int
 ) -> dict:
     global ACTIVITY_MAX_DATA_MINUTES
     global ANOMALY_THRESHOLD_RATIO
     global BASELINE_MIN_DATA_MINUTES
     global BASELINE_MAX_DAYS
     global RELATEDNESS_MAX_HISTORY
+    global RELATEDNESS_MAX_STEPS_MINUTES
 
     ACTIVITY_MAX_DATA_MINUTES = activity_max_data_minutes
     ANOMALY_THRESHOLD_RATIO = anomaly_threshold_ratio
     BASELINE_MIN_DATA_MINUTES = baseline_min_data_minutes
     BASELINE_MAX_DAYS = baseline_max_days
     RELATEDNESS_MAX_HISTORY = relatedness_max_history
+    RELATEDNESS_MAX_STEPS_MINUTES = relatedness_max_steps_minutes
 
     return get_ml_config()
 

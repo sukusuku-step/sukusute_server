@@ -2242,6 +2242,9 @@ document.getElementById('configForm').addEventListener(
             // ML結果の再取得を促す
             state.mlUpdatedAt = 0;
 
+            // 設定保存に成功した場合はウィンドウを閉じる
+            closeModal('configModal');
+
         } catch (error) {
             setMessage(
                 'configMessage',
@@ -2250,6 +2253,7 @@ document.getElementById('configForm').addEventListener(
         }
     }
 );
+
 document.getElementById('studentManageList').addEventListener('change', async (event) => {
     const select = event.target.closest('[data-manage-class]');
     if (select) {
