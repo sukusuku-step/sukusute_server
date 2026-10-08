@@ -496,6 +496,10 @@ async function openConfigModal() {
 
     document.getElementById('configRelatednessMaxHistory').value = config.relatedness_max_history;
 
+    const relatednessStepsTotalMinutes = Number(config.relatedness_max_steps_minutes) || 0;
+    document.getElementById('configRelatednessMaxStepsHours').value = Math.floor(relatednessStepsTotalMinutes / 60);
+    document.getElementById('configRelatednessMaxStepsMinutes').value = relatednessStepsTotalMinutes % 60;
+
     closeMenu();
     openModal('configModal');
 }
@@ -2198,6 +2202,7 @@ document.getElementById('configForm').addEventListener(
         const hours = Number(document.getElementById('configBaselineMinHours').value);
         const minutes = Number(document.getElementById('configBaselineMinMinutes').value);
         const baselineMinDataMinutes = hours * 60 + minutes;
+        const relatednessMaxStepsMinutes = Number(document.getElementById('configRelatednessMaxStepsHours').value) * 60 + Number(document.getElementById('configRelatednessMaxStepsMinutes').value);
 
         const body = {
             activity_max_data_minutes:
@@ -2223,6 +2228,8 @@ document.getElementById('configForm').addEventListener(
                     'configRelatednessMaxHistory'
                 ).value
             ),
+
+            relatedness_max_steps_minutes: relatednessMaxStepsMinutes,
         };
 
         try {

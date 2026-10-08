@@ -162,6 +162,16 @@
                     </div>
                     <small>関連度スコア計算の際に用いる過去の相対距離からの推論結果の最大件数</small>
                 </label>
+                <label>
+                    <span>関連度スコア算出に使用する歩数データ量</span>
+                    <div class="config-time-row">
+                        <input id="configRelatednessMaxStepsHours" type="number" min="0" step="1" required>
+                        <span>時間</span>
+                        <input id="configRelatednessMaxStepsMinutes" type="number" min="0" max="59" step="1" required>
+                        <span>分</span>
+                    </div>
+                    <small>歩数類似度の計算に使用する過去の歩数データの最大時間</small>
+                </label>
                 <button class="primary-button" type="submit">設定を保存</button>
                 <div id="configMessage" class="form-message" role="status"></div>
             </form>
