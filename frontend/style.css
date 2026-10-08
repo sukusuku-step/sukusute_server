@@ -2037,9 +2037,21 @@ body.square-mode.signage-mode .nearest-person {
     }
 }
 
+.network-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin-top: 10px;
+    color: #625969;
+    font-size: 12px;
+}
+
 .network-legend-gradient {
+    display: inline-block;
     width: 180px;
     height: 8px;
+    flex: 0 0 180px;
     border-radius: 4px;
     background: linear-gradient(
         to right,
