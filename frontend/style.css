@@ -2270,3 +2270,13 @@ body.square-mode.signage-mode .nearest-person {
     fill: #ffe4a3;
     stroke: #7a4a13;
 }
+
+.relation-pair.is-highest-relatedness {
+    border-color: #c62828;
+    background: #fff0f0;
+    box-shadow: 0 0 0 2px rgba(198, 40, 40, .18);
+}
+
+.relation-pair.is-highest-relatedness strong {
+    color: #b71c1c;
+}

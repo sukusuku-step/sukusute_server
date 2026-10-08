@@ -1531,25 +1531,71 @@ async function refreshClassList() {
 // 現在の児童間について、distance_inferの推論結果と関連度スコアを一覧表示する。
 function renderRelationSummary() {
     const graph = document.getElementById('relationGraph');
-    const rows = [];
+
+    // 表示可能な関連度スコアの最大値を求める
+    let maxScore = -Infinity;
+
     for (let i = 0; i < state.children.length; i += 1) {
         for (let j = i + 1; j < state.children.length; j += 1) {
             const child1 = state.children[i];
             const child2 = state.children[j];
 
             const relation = state.mlRelations[relationKey(child1.child_id, child2.child_id)];
-            const relationIsStale = relation ? isMlResultStale(relation.evaluated_at) : false;
 
-            rows.push(`
-                <div class="relation-pair${staleClass(relationIsStale)}">
-                    <strong>${escapeHtml(wanakana.toHiragana(child1.name))} ↔ ${escapeHtml(wanakana.toHiragana(child2.name))}</strong>
-                    <span>距離状態: ${relation ? escapeHtml(relation.evaluated) : '未算出'}</span>
-                    <span>信頼度: ${relation ? formatConfidence(relation.confidence) : '-'}</span>
-                    <span>関連度: ${relation ? formatMlNumber(relation.score) : '-'}</span>
-                </div>`);
+            if (!relation) continue;
+
+            // 15分以上更新されていない関連度は最大値判定から除外
+            if (isMlResultStale(relation.evaluated_at)) {
+                continue;
+            }
+
+            const score = Number(relation.score);
+
+            if (Number.isFinite(score)) {
+                maxScore = Math.max(maxScore, score);
+            }
         }
     }
-    graph.innerHTML = rows.length ? rows.join('') : '<span>比較できる子どものデータがありません</span>';
+
+    const rows = [];
+
+    for (let i = 0; i < state.children.length; i += 1) {
+        for (let j = i + 1; j < state.children.length; j += 1) {
+            const child1 = state.children[i];
+            const child2 = state.children[j];
+
+            const relation = state.mlRelations[relationKey(child1.child_id, child2.child_id)];
+
+            const relationIsStale = relation
+                ? isMlResultStale(relation.evaluated_at)
+                : false;
+
+            const score = relation ? Number(relation.score) : NaN;
+
+            const isHighest = !relationIsStale && Number.isFinite(score) && score === maxScore;
+
+            rows.push(`
+                <div class="relation-pair${staleClass(relationIsStale)}${isHighest ? ' is-highest-relatedness' : ''}">
+                    <strong>
+                        ${escapeHtml(wanakana.toHiragana(child1.name))}↔${escapeHtml(wanakana.toHiragana(child2.name))}
+                    </strong>
+                    <span>
+                        距離状態:${relation ? escapeHtml(relation.evaluated) : '未算出'}
+                    </span>
+                    <span>
+                        信頼度:${relation ? formatConfidence(relation.confidence) : '-'}
+                    </span>
+                    <span>
+                        関連度:${relation ? formatMlNumber(relation.score) : '-'}
+                    </span>
+                </div>
+            `);
+        }
+    }
+
+    graph.innerHTML = rows.length
+        ? rows.join('')
+        : '<span>比較できる子どものデータがありません</span>';
 }
 
 async function openRelationModal() {
