@@ -39,6 +39,9 @@ RELATEDNESS_MAX_STEPS_MINUTES = 180
 # BEHAVIOR_SESSION_GAP_MINUTES以上時間が空いたらセッション境界を更新する
 ML_SESSION_GAP_MINUTES = 30
 
+# ANOMALY_MIN_WARNING_FEATURES種類以上の項目で異常検知されたら異常とする
+ANOMALY_MIN_WARNING_FEATURES = 3
+
 # Progress表示: ML_SESSION_GAP_MINUTESの空きがあった場合には新しくそこを0%として再開
 # Behavior推論: ML_SESSION_GAP_MINUTESの空きがあった場合には新しく6000行をそこから見て貯める
 # Distance推論: ML_SESSION_GAP_MINUTESの空きがあった場合には新しく6000行をそこから見て貯める
@@ -138,7 +141,7 @@ def compare_current_with_baseline(
         threshold_ratio = ANOMALY_THRESHOLD_RATIO
 
     comparisons = {}
-    warning = False
+    warning_count = 0
 
     for feature, current_value in current_features.items():
         baseline_feature = baseline_result.get(feature)
@@ -157,7 +160,9 @@ def compare_current_with_baseline(
 
         relative_diff = abs(current_value - baseline_median) / reference_value
         feature_warning = relative_diff >= threshold_ratio
-        warning = warning or feature_warning # しきい値のパーセントよりも乖離していたらwarningをtrueにする
+
+        if feature_warning:
+            warning_count += 1
 
         comparisons[feature] = {
             "current": float(current_value),
@@ -168,8 +173,25 @@ def compare_current_with_baseline(
             "warning": bool(feature_warning)
         }
 
+    # ANOMALY_MIN_WARNING_FEATURES種類以上の項目で異常が検出されたら異常とする
+    warning = warning_count >= ANOMALY_MIN_WARNING_FEATURES
+
+    relative_diff = abs(current_value - baseline_median) / reference_value
+    feature_warning = relative_diff >= threshold_ratio
+    warning = warning or feature_warning # しきい値のパーセントよりも乖離していたらwarningをtrueにする
+
+    comparisons[feature] = {
+        "current": float(current_value),
+        "baseline_median": baseline_median,
+        "baseline_mad_scale": baseline_mad_scale,
+        "relative_diff": float(relative_diff),
+        "relative_diff_percent": float(relative_diff * 100.0),
+        "warning": bool(feature_warning)
+    }
+
     return {
         "warning": bool(warning),
+        "warning_count": warning_count,
         "threshold_ratio": float(threshold_ratio),
         "threshold_percent": float(threshold_ratio * 100.0),
         "comparisons": comparisons
