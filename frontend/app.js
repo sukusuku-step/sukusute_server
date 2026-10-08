@@ -1312,15 +1312,28 @@ function renderOpenStudentDetailModal() {
 
     document.getElementById('studentDetailTitle').textContent = `${wanakana.toHiragana(child.name || `子ども${childId}`)}の詳細`;
 
+    const childDataIsStale = isFreshnessStale(
+        state.dataFreshness.childData[childId],
+        SENSOR_DATA_STALE_MS
+    );
+
+    const nearestIsStale = isFreshnessStale(
+        state.dataFreshness.childDistance[childId],
+        SENSOR_DATA_STALE_MS
+    );
+
     content.innerHTML = `
         <div class="student-detail-summary">
             <strong>${escapeHtml(wanakana.toHiragana(child.name || `子ども${childId}`))}</strong>
-            <span>${escapeHtml(
-                state.nearestNames[childId]
+            <span class="detail-nearest-value${staleClass(nearestIsStale)}">
+                ${escapeHtml(state.nearestNames[childId]
                     ? `最も近くにいる人：${wanakana.toHiragana(state.nearestNames[childId])}`
                     : '近くにいる人：データなし'
-            )}</span>
-            <span>歩数：${(state.steps[childId] || 0).toLocaleString()}</span>
+            )}
+            </span>
+            <span class="detail-step-value${staleClass(childDataIsStale)}">
+                歩数：${(state.steps[childId] || 0).toLocaleString()}
+            </span>
         </div>
 
         ${card.querySelector('.device-status')?.outerHTML || ''}
