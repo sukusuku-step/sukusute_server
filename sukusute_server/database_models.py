@@ -110,7 +110,7 @@ class SingleChildData(Base):
     __tablename__ = "child_data"
 
     child_id: Mapped[int] = mapped_column(
-        ForeignKey("child.child_id"),
+        ForeignKey("child.child_id", ondelete="CASCADE"),
         primary_key=True
     )
     date: Mapped[datetime.datetime] = mapped_column(primary_key=True)
@@ -136,13 +136,13 @@ class HasTwoChildRelations():
     @declared_attr
     def child_id_1(cls) -> Mapped[int]:
         return mapped_column(
-            ForeignKey("child.child_id"),
+            ForeignKey("child.child_id", ondelete="CASCADE"),
             primary_key=True
         )
     @declared_attr
     def child_id_2(cls) -> Mapped[int]:
         return mapped_column(
-            ForeignKey("child.child_id"),
+            ForeignKey("child.child_id", ondelete="CASCADE"),
             primary_key=True
         )
 
@@ -223,7 +223,7 @@ class ChildBehaviorDataEvaluationHistory(Base):
     __tablename__ = "behavior_evalhist"
 
     child_id: Mapped[int] = mapped_column(
-        ForeignKey("child.child_id"),
+        ForeignKey("child.child_id", ondelete="CASCADE"),
         primary_key=True
     )
     
